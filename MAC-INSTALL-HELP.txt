@@ -1,0 +1,15 @@
+SINHALATYPE MAC INSTALLATION HELP
+
+Normal installation
+1. Extract the complete SinhalaType ZIP.
+2. Double-click Install-SinhalaType-Mac.command.
+3. Follow the on-screen installation guide.
+
+If macOS says you do not have appropriate access privileges
+1. Open Terminal from Applications > Utilities.
+2. Type: bash followed by one space.
+3. Drag Install-SinhalaType-Mac.command from Finder into Terminal.
+4. Press Return.
+
+The guided installer will open even if an extraction or transfer application
+removed the command file's executable permission.

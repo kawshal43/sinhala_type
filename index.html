@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SinhalaType</title>
+  </head>
+  <body>
+    <main class="panel">
+      <header class="brand">
+        <div class="mark" aria-hidden="true">&#x0DC3;&#x0DD2;</div>
+        <div><h1>SinhalaType</h1><p>Type Singlish. Get Sinhala. Instantly.</p></div>
+      </header>
+      <section class="field-group">
+        <div class="label-row"><label for="singlish">Singlish</label><button id="paste" class="text-button">Paste</button></div>
+        <textarea id="singlish" spellcheck="false" placeholder="mama ada gedara yanawa"></textarea>
+        <div class="typing-tool-buttons" role="group" aria-label="Typing tools">
+          <button id="keyboard-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="keyboard-panel"><span aria-hidden="true">&#x2328;</span> Keyboard</button>
+          <button id="hints-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="hints-panel"><span aria-hidden="true">?</span> Hints</button>
+        </div>
+        <div id="keyboard-panel" class="typing-panel" hidden>
+          <div class="typing-panel-heading">
+            <strong>On-screen keyboard</strong>
+            <span id="keyboard-caption">Click a key to insert it at the cursor.</span>
+          </div>
+          <div class="layout-tabs" role="tablist" aria-label="Keyboard layout">
+            <button id="layout-easy" class="active" type="button" role="tab" aria-selected="true">Easy Phonetic</button>
+            <button id="layout-wije" type="button" role="tab" aria-selected="false">Wijesekara (SLS)</button>
+          </div>
+          <div id="keyboard-filters" class="keyboard-filters" role="group" aria-label="Phonetic key category"></div>
+          <div id="keyboard-keys" class="keyboard-keys" role="group" aria-label="Sinhala keyboard keys"></div>
+        </div>
+        <div id="hints-panel" class="typing-panel hints-panel" hidden>
+          <div class="typing-panel-heading"><strong>Typing hints</strong><span>Capital letters change some Sinhala sounds.</span></div>
+          <div class="hint-list">
+            <div><code>ka / kaa / kA</code><span>&#x0D9A; / &#x0D9A;&#x0DCF; / &#x0D9A;&#x0DD0;</span></div>
+            <div><code>Ta / Da / Na</code><span>&#x0DA8; / &#x0DAA; / &#x0DAB;</span></div>
+            <div><code>kra / kYa</code><span>&#x0D9A;&#x0DCA;&#x200D;&#x0DBB; / &#x0D9A;&#x0DCA;&#x200D;&#x0DBA;</span></div>
+            <div><code>axka / aN / aH</code><span>&#x0D85;&#x0D82;&#x0D9A; / &#x0D85;&#x0D82; / &#x0D85;&#x0D83;</span></div>
+          </div>
+          <p class="hint-note">Use braces to preserve English text, for example <code>{Premiere Pro}</code>. Everything is converted locally on this computer.</p>
+        </div>
+      </section>
+      <section class="field-group output-group">
+        <div class="label-row"><label for="sinhala">Sinhala</label><span id="count">0 characters</span></div>
+        <div class="format-switch" role="group" aria-label="Output format">
+          <button id="mode-unicode" class="active" type="button">Unicode</button>
+          <button id="mode-wije" type="button">Wije font</button>
+          <button id="mode-isi" type="button">ISI font</button>
+        </div>
+        <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
+        <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
+      </section>
+      <button id="copy" class="primary copy-action">Copy Unicode</button>
+      <p id="message" class="message" role="status"></p>
+      <footer>Developers: Kawshal · Shanal · Shehan · 2026 · v1.0f · 074 0532 502</footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

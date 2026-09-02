@@ -3,58 +3,306 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SinhalaType</title>
+    <title>AutoCap</title>
   </head>
   <body>
     <main class="panel">
+      <!-- Header / Brand -->
       <header class="brand">
-        <div class="mark" aria-hidden="true">&#x0DC3;&#x0DD2;</div>
-        <div><h1>SinhalaType</h1><p>Type Singlish. Get Sinhala. Instantly.</p></div>
+        <div class="mark" aria-hidden="true">AC</div>
+        <div class="brand-info">
+          <h1>AutoCap</h1>
+          <p>Auto Captions &amp; Sinhala Tools for Premiere Pro</p>
+        </div>
       </header>
-      <section class="field-group">
-        <div class="label-row"><label for="singlish">Singlish</label><button id="paste" class="text-button">Paste</button></div>
-        <textarea id="singlish" spellcheck="false" placeholder="mama ada gedara yanawa"></textarea>
-        <div class="typing-tool-buttons" role="group" aria-label="Typing tools">
-          <button id="keyboard-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="keyboard-panel"><span aria-hidden="true">&#x2328;</span> Keyboard</button>
-          <button id="hints-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="hints-panel"><span aria-hidden="true">?</span> Hints</button>
+
+      <!-- Main Navigation Tabs -->
+      <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
+        <button id="tab-btn-caption" class="nav-tab active" type="button" role="tab" aria-selected="true" aria-controls="view-caption">
+          <span aria-hidden="true">&#x1F399;&#xFE0F;</span> Auto Caption
+        </button>
+        <button id="tab-btn-typer" class="nav-tab" type="button" role="tab" aria-selected="false" aria-controls="view-typer">
+          <span aria-hidden="true">&#x2328;&#xFE0F;</span> Sinhala Typer
+        </button>
+        <button id="tab-btn-settings" class="nav-tab" type="button" role="tab" aria-selected="false" aria-controls="view-settings">
+          <span aria-hidden="true">&#x2699;&#xFE0F;</span> Settings
+        </button>
+      </nav>
+
+      <!-- TAB 1: AUTO CAPTION -->
+      <section id="view-caption" class="tab-view active" role="tabpanel" aria-labelledby="tab-btn-caption">
+        <!-- Media Input Card -->
+        <div class="card media-card">
+          <!-- Premiere Pro Sequence Track Selection -->
+          <div class="premiere-track-box">
+            <div class="premiere-track-header">
+              <span class="track-header-title">&#x1F3AC; Premiere Audio Track / Layer</span>
+              <button id="btn-refresh-tracks" class="track-refresh-btn" type="button" title="Scan Premiere Pro sequence audio tracks">
+                &#x1F504; Scan Tracks
+              </button>
+            </div>
+            <div class="track-controls-row">
+              <select id="select-audio-track" aria-label="Select Premiere Pro Audio Track">
+                <option value="">(Click Scan Tracks to list sequence audio)</option>
+              </select>
+              <button id="btn-load-track" class="secondary-btn track-load-btn" type="button">
+                Load Track
+              </button>
+            </div>
+            <div id="track-load-status" class="track-load-status" hidden>
+              <div class="status-top-row">
+                <div class="status-left">
+                  <span class="spinner-small" aria-hidden="true"></span>
+                  <span id="track-load-text">Loading audio track...</span>
+                </div>
+                <span id="track-load-percent" class="status-percent-badge">0%</span>
+              </div>
+              <div class="progress-bar-container">
+                <div id="track-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="divider-or"><span>OR UPLOAD AUDIO/VIDEO</span></div>
+
+          <div id="dropzone" class="dropzone" role="button" tabindex="0">
+            <span class="dropzone-icon">&#x1F4C2;</span>
+            <div class="dropzone-text">
+              <strong id="dropzone-label">Drop audio/video file here</strong>
+              <span>MP3, WAV, M4A, MP4, WebM or SRT file</span>
+            </div>
+            <input type="file" id="audio-file-input" accept="audio/*,video/*,.srt,.vtt" hidden />
+          </div>
+
+          <div class="media-quick-actions">
+            <button id="btn-browse-file" class="secondary-btn" type="button">
+              <span>&#x1F4C1;</span> Browse File
+            </button>
+            <button id="btn-record-mic" class="secondary-btn record-btn" type="button">
+              <span id="record-icon">&#x1F534;</span> <span id="record-text">Record Mic</span>
+            </button>
+          </div>
+
+          <!-- Audio Preview Player -->
+          <div id="audio-preview-card" class="audio-preview-card" hidden>
+            <div class="audio-meta">
+              <span id="audio-filename">audio.mp3</span>
+              <span id="audio-duration">00:00</span>
+            </div>
+            <audio id="audio-player" controls preload="metadata"></audio>
+          </div>
         </div>
-        <div id="keyboard-panel" class="typing-panel" hidden>
-          <div class="typing-panel-heading">
-            <strong>On-screen keyboard</strong>
-            <span id="keyboard-caption">Click a key to insert it at the cursor.</span>
+
+        <!-- Transcribe Options & Action -->
+        <div class="card transcribe-controls-card">
+          <div class="controls-row">
+            <div class="control-item">
+              <label for="select-language">Language</label>
+              <select id="select-language">
+                <option value="auto" selected>Auto-Detect Language</option>
+                <option value="si">Sinhala (&#x0DC3;&#x0DD2;&#x0D82;&#x0DC4;&#x0DBB;)</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+            <div class="control-item">
+              <label for="select-provider">AI Engine</label>
+              <select id="select-provider">
+                <option value="gemini" selected>Google Gemini 3.6 Flash (Recommended)</option>
+                <option value="auto">Auto Detect (Best Available)</option>
+                <option value="groq">Groq Whisper (Fastest)</option>
+                <option value="openai">OpenAI Whisper-1</option>
+              </select>
+            </div>
           </div>
-          <div class="layout-tabs" role="tablist" aria-label="Keyboard layout">
-            <button id="layout-easy" class="active" type="button" role="tab" aria-selected="true">Easy Phonetic</button>
-            <button id="layout-wije" type="button" role="tab" aria-selected="false">Wijesekara (SLS)</button>
+
+          <button id="btn-transcribe" class="primary action-btn full-width" type="button">
+            <span>&#x2728;</span> Generate Auto Captions
+          </button>
+
+          <div id="caption-status" class="status-indicator" hidden>
+            <div class="status-top-row">
+              <div class="status-left">
+                <span class="spinner" aria-hidden="true"></span>
+                <span id="caption-status-text">Transcribing...</span>
+              </div>
+              <span id="caption-status-percent" class="status-percent-badge">0%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="caption-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
           </div>
-          <div id="keyboard-filters" class="keyboard-filters" role="group" aria-label="Phonetic key category"></div>
-          <div id="keyboard-keys" class="keyboard-keys" role="group" aria-label="Sinhala keyboard keys"></div>
         </div>
-        <div id="hints-panel" class="typing-panel hints-panel" hidden>
-          <div class="typing-panel-heading"><strong>Typing hints</strong><span>Capital letters change some Sinhala sounds.</span></div>
-          <div class="hint-list">
-            <div><code>ka / kaa / kA</code><span>&#x0D9A; / &#x0D9A;&#x0DCF; / &#x0D9A;&#x0DD0;</span></div>
-            <div><code>Ta / Da / Na</code><span>&#x0DA8; / &#x0DAA; / &#x0DAB;</span></div>
-            <div><code>kra / kYa</code><span>&#x0D9A;&#x0DCA;&#x200D;&#x0DBB; / &#x0D9A;&#x0DCA;&#x200D;&#x0DBA;</span></div>
-            <div><code>axka / aN / aH</code><span>&#x0D85;&#x0D82;&#x0D9A; / &#x0D85;&#x0D82; / &#x0D85;&#x0D83;</span></div>
+
+        <!-- Subtitles Editor & Export Section -->
+        <div id="subtitles-section" class="card subtitles-section" hidden>
+          <div class="section-header">
+            <div>
+              <h2>Captions Editor</h2>
+              <span id="cues-count">0 captions</span>
+            </div>
+            <span id="detected-lang-pill" class="lang-pill" hidden>Sinhala Detected</span>
           </div>
-          <p class="hint-note">Use braces to preserve English text, for example <code>{Premiere Pro}</code>. Everything is converted locally on this computer.</p>
+
+          <!-- Sinhala Font Tests & Live Preview Section -->
+          <div id="sinhala-test-box" class="sinhala-test-box">
+            <div class="test-box-header">
+              <span class="test-title">&#x1F524; Sinhala Font Tests &amp; Live Preview:</span>
+              <!-- Font switcher buttons -->
+              <div class="format-switch small font-pills" role="group" aria-label="Sinhala font format">
+                <button id="sub-mode-unicode" class="active" type="button">Unicode</button>
+                <button id="sub-mode-wije" type="button">Wije (DL)</button>
+                <button id="sub-mode-isi" type="button">ISI (FM)</button>
+              </div>
+            </div>
+            <!-- Test word sample chips -->
+            <div id="sinhala-test-chips" class="sinhala-test-chips">
+              <!-- Dynamically populated sample chips -->
+            </div>
+          </div>
+
+          <!-- Premiere Pro & Export Buttons -->
+          <div class="export-actions-grid">
+            <button id="btn-import-premiere" class="primary premiere-action" type="button">
+              <span>&#x1F3AC;</span> Import to Premiere
+            </button>
+            <button id="btn-export-srt" class="secondary-btn" type="button">
+              Export .SRT
+            </button>
+            <button id="btn-export-vtt" class="secondary-btn" type="button">
+              Export .VTT
+            </button>
+            <button id="btn-copy-srt" class="secondary-btn" type="button">
+              Copy SRT
+            </button>
+          </div>
+
+          <!-- Tools toolbar: Add, Shift, Split -->
+          <div class="tools-bar">
+            <button id="btn-add-cue" class="tool-chip" type="button">+ Add Line</button>
+            <button id="btn-shift-back" class="tool-chip" type="button" title="Shift earlier by 0.5s">-0.5s</button>
+            <button id="btn-shift-forward" class="tool-chip" type="button" title="Shift later by 0.5s">+0.5s</button>
+            <button id="btn-auto-cpl" class="tool-chip" type="button" title="Split long sentences into short subtitle cards">Split Long Lines</button>
+          </div>
+
+          <div class="click-copy-hint">
+            <span>&#x1F4CB;</span> Click any caption card to <strong>instantly copy</strong> it to clipboard for Premiere!
+          </div>
+
+          <!-- Cue cards list -->
+          <div id="cue-list" class="cue-list" role="feed" aria-label="Subtitle cues"></div>
         </div>
       </section>
-      <section class="field-group output-group">
-        <div class="label-row"><label for="sinhala">Sinhala</label><span id="count">0 characters</span></div>
-        <div class="format-switch" role="group" aria-label="Output format">
-          <button id="mode-unicode" class="active" type="button">Unicode</button>
-          <button id="mode-wije" type="button">Wije font</button>
-          <button id="mode-isi" type="button">ISI font</button>
-        </div>
-        <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
-        <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
+
+      <!-- TAB 2: SINHALA TYPER (The original converter & keyboard) -->
+      <section id="view-typer" class="tab-view" role="tabpanel" aria-labelledby="tab-btn-typer" hidden>
+        <section class="field-group">
+          <div class="label-row">
+            <label for="singlish">Singlish</label>
+            <button id="paste" class="text-button" type="button">Paste</button>
+          </div>
+          <textarea id="singlish" spellcheck="false" placeholder="mama ada gedara yanawa"></textarea>
+          <div class="typing-tool-buttons" role="group" aria-label="Typing tools">
+            <button id="keyboard-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="keyboard-panel">
+              <span aria-hidden="true">&#x2328;</span> Keyboard
+            </button>
+            <button id="hints-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="hints-panel">
+              <span aria-hidden="true">?</span> Hints
+            </button>
+          </div>
+          <div id="keyboard-panel" class="typing-panel" hidden>
+            <div class="typing-panel-heading">
+              <strong>On-screen keyboard</strong>
+              <span id="keyboard-caption">Click a key to insert it at the cursor.</span>
+            </div>
+            <div class="layout-tabs" role="tablist" aria-label="Keyboard layout">
+              <button id="layout-easy" class="active" type="button" role="tab" aria-selected="true">Easy Phonetic</button>
+              <button id="layout-wije" type="button" role="tab" aria-selected="false">Wijesekara (SLS)</button>
+            </div>
+            <div id="keyboard-filters" class="keyboard-filters" role="group" aria-label="Phonetic key category"></div>
+            <div id="keyboard-keys" class="keyboard-keys" role="group" aria-label="Sinhala keyboard keys"></div>
+          </div>
+          <div id="hints-panel" class="typing-panel hints-panel" hidden>
+            <div class="typing-panel-heading">
+              <strong>Typing hints</strong>
+              <span>Capital letters change some Sinhala sounds.</span>
+            </div>
+            <div class="hint-list">
+              <div><code>ka / kaa / kA</code><span>&#x0D9A; / &#x0D9A;&#x0DCF; / &#x0D9A;&#x0DD0;</span></div>
+              <div><code>Ta / Da / Na</code><span>&#x0DA8; / &#x0DAA; / &#x0DAB;</span></div>
+              <div><code>kra / kYa</code><span>&#x0D9A;&#x0DCA;&#x200D;&#x0DBB; / &#x0D9A;&#x0DCA;&#x200D;&#x0DBA;</span></div>
+              <div><code>axka / aN / aH</code><span>&#x0D85;&#x0D82;&#x0D9A; / &#x0D85;&#x0D82; / &#x0D85;&#x0D83;</span></div>
+            </div>
+            <p class="hint-note">Use braces to preserve English text, for example <code>{Premiere Pro}</code>. Everything is converted locally on this computer.</p>
+          </div>
+        </section>
+
+        <section class="field-group output-group">
+          <div class="label-row">
+            <label for="sinhala">Sinhala Output</label>
+            <span id="count">0 characters</span>
+          </div>
+          <div class="format-switch" role="group" aria-label="Output format">
+            <button id="mode-unicode" class="active" type="button">Unicode</button>
+            <button id="mode-wije" type="button">Wije font</button>
+            <button id="mode-isi" type="button">ISI font</button>
+          </div>
+          <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
+          <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
+        </section>
+        <button id="copy" class="primary copy-action" type="button">Copy Unicode</button>
       </section>
-      <button id="copy" class="primary copy-action">Copy Unicode</button>
+
+      <!-- TAB 3: SETTINGS -->
+      <section id="view-settings" class="tab-view" role="tabpanel" aria-labelledby="tab-btn-settings" hidden>
+        <div class="card settings-card">
+          <h2>AI Transcription API Keys</h2>
+          <p class="settings-desc">Your API keys are stored only on your computer in local extension storage.</p>
+
+          <div class="settings-field">
+            <div class="settings-label-row">
+              <label for="input-gemini-key">Google Gemini API Key (Recommended)</label>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+            </div>
+            <input type="password" id="input-gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+            <span class="field-hint">High-accuracy multimodal transcription with Gemini 3.6 Flash.</span>
+          </div>
+
+          <div class="settings-field">
+            <div class="settings-label-row">
+              <label for="input-groq-key">Groq API Key</label>
+              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" class="ext-link">Get Free Key &#x2197;</a>
+            </div>
+            <input type="password" id="input-groq-key" placeholder="gsk_..." autocomplete="off" />
+            <span class="field-hint">Ultra-fast Whisper-large-v3 transcription with free tier.</span>
+          </div>
+
+          <div class="settings-field">
+            <div class="settings-label-row">
+              <label for="input-openai-key">OpenAI API Key</label>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+            </div>
+            <input type="password" id="input-openai-key" placeholder="sk-..." autocomplete="off" />
+            <span class="field-hint">Used for Whisper-1 model transcription.</span>
+          </div>
+
+          <div class="settings-field">
+            <label for="input-max-cpl">Max Characters Per Subtitle Line (CPL)</label>
+            <input type="number" id="input-max-cpl" min="15" max="80" value="38" />
+            <span class="field-hint">Used when automatically breaking long sentences for social media captions.</span>
+          </div>
+
+          <button id="btn-save-settings" class="primary full-width" type="button">Save Settings</button>
+        </div>
+      </section>
+
+      <!-- Global Message Notification -->
       <p id="message" class="message" role="status"></p>
-      <footer>Developers: Kawshal · Shanal · Shehan · 2026 · v1.0f · 074 0532 502</footer>
+
+      <footer>
+        AutoCap 1.3.1 for Premiere Pro · Sinhala &amp; Auto Captions
+      </footer>
     </main>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

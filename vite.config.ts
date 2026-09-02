@@ -16,7 +16,7 @@ function premiereUxpBundle(): Plugin {
 
       writeFileSync(htmlPath, html, "utf8");
       copyFileSync(resolve("manifest.json"), resolve(outputDirectory, "manifest.json"));
-      const cepOutputDirectory = resolve("cep", "SinhalaType", "dist");
+      const cepOutputDirectory = resolve("cep", "AutoCap", "dist");
       rmSync(cepOutputDirectory, { recursive: true, force: true });
       cpSync(outputDirectory, cepOutputDirectory, { recursive: true, force: true });
     }

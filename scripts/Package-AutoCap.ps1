@@ -1,11 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
-$sourceRoot = Join-Path $repositoryRoot "cep\SinhalaType"
+$sourceRoot = Join-Path $repositoryRoot "cep\AutoCap"
 $releaseRoot = Join-Path $repositoryRoot "release"
 $releaseVersion = "1.3.1"
-$stageRoot = Join-Path $releaseRoot "SinhalaType-$releaseVersion"
-$zipPath = Join-Path $releaseRoot "SinhalaType-$releaseVersion.zip"
+$stageRoot = Join-Path $releaseRoot "AutoCap-$releaseVersion"
+$zipPath = Join-Path $releaseRoot "AutoCap-$releaseVersion.zip"
 
 $releaseFullPath = [IO.Path]::GetFullPath($releaseRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $stageFullPath = [IO.Path]::GetFullPath($stageRoot)
@@ -18,10 +18,10 @@ if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Re
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 New-Item -ItemType Directory -Path $stageRoot | Out-Null
 
-Copy-Item -LiteralPath $sourceRoot -Destination (Join-Path $stageRoot "SinhalaType") -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-SinhalaType.ps1") -Destination $stageRoot -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-SinhalaType-Windows.cmd") -Destination $stageRoot -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-SinhalaType-Mac.command") -Destination $stageRoot -Force
+Copy-Item -LiteralPath $sourceRoot -Destination (Join-Path $stageRoot "AutoCap") -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-AutoCap.ps1") -Destination $stageRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-AutoCap-Windows.cmd") -Destination $stageRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-AutoCap-Mac.command") -Destination $stageRoot -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "MAC-INSTALL-HELP.txt") -Destination $stageRoot -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "DELIVERY.md") -Destination $stageRoot -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "THIRD-PARTY-NOTICES.md") -Destination $stageRoot -Force

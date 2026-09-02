@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { transliterate } from "../src/core/transliterator";
 import { isSinhalaUnicodeCharacter, unicodeCodePoints } from "../src/core/unicodeMapping";
 
-describe("SinhalaType core", () => {
+describe("AutoCap core transliterator", () => {
   it.each([
     ["mama", "මම"], ["ada", "අද"], ["gedara", "ගෙදර"],
     ["oya kohomada", "ඔයා කොහොමද"],

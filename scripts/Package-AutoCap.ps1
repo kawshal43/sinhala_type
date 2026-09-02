@@ -18,6 +18,17 @@ if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Re
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 New-Item -ItemType Directory -Path $stageRoot | Out-Null
 
+# 1. Compile Standalone Windows .exe Installer first
+$buildExeScript = Join-Path $PSScriptRoot "Build-InstallerExe.ps1"
+if (Test-Path $buildExeScript) {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $buildExeScript
+  $exePath = Join-Path $releaseRoot "AutoCap-Installer.exe"
+  if (Test-Path $exePath) {
+    Copy-Item -LiteralPath $exePath -Destination (Join-Path $stageRoot "AutoCap-Installer.exe") -Force
+  }
+}
+
+# 2. Stage distribution folder
 Copy-Item -LiteralPath $sourceRoot -Destination (Join-Path $stageRoot "AutoCap") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-AutoCap.ps1") -Destination $stageRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Install-AutoCap-Windows.cmd") -Destination $stageRoot -Force
@@ -26,8 +37,9 @@ Copy-Item -LiteralPath (Join-Path $repositoryRoot "MAC-INSTALL-HELP.txt") -Desti
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "DELIVERY.md") -Destination $stageRoot -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "THIRD-PARTY-NOTICES.md") -Destination $stageRoot -Force
 
-# Build the ZIP directly so the macOS .command launcher retains Unix mode 0755.
+# 3. Build the ZIP directly so the macOS .command launcher retains Unix mode 0755.
 Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipStream = [IO.File]::Open($zipPath, [IO.FileMode]::CreateNew)
 try {
   $archive = New-Object IO.Compression.ZipArchive($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false)
@@ -37,10 +49,8 @@ try {
       $entryName = $file.FullName.Substring($stagePrefixLength).Replace("\", "/")
       $entry = $archive.CreateEntry($entryName, [IO.Compression.CompressionLevel]::Optimal)
       if ($entryName.EndsWith(".command", [StringComparison]::OrdinalIgnoreCase)) {
-        # Unix regular file 0755. Stored as the signed Int32 form of 0x81ED0000.
         $entry.ExternalAttributes = -2115174400
       } else {
-        # Unix regular file 0644. Stored as the signed Int32 form of 0x81A40000.
         $entry.ExternalAttributes = -2119958528
       }
       $entry.LastWriteTime = $file.LastWriteTime
@@ -56,9 +66,6 @@ try {
   $zipStream.Dispose()
 }
 
-# System.IO.Compression writes MS-DOS as the ZIP creator platform even when
-# Unix mode bits are supplied. Mark each central-directory entry as Unix so
-# macOS Archive Utility honors the command file's executable permission.
 $zipBytes = [IO.File]::ReadAllBytes($zipPath)
 $eocdOffset = -1
 $minimumEocdOffset = [Math]::Max(0, $zipBytes.Length - 65557)
@@ -83,5 +90,10 @@ for ($entryIndex = 0; $entryIndex -lt $entryCount; $entryIndex++) {
   $centralOffset += 46 + $nameLength + $extraLength + $commentLength
 }
 [IO.File]::WriteAllBytes($zipPath, $zipBytes)
-
 Write-Host "Created $zipPath" -ForegroundColor Green
+
+# 4. Build ZXP Archive for Adobe Extension Manager
+$zxpPath = Join-Path $releaseRoot "AutoCap-$releaseVersion.zxp"
+if (Test-Path $zxpPath) { Remove-Item $zxpPath -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($sourceRoot, $zxpPath)
+Write-Host "Created $zxpPath" -ForegroundColor Green

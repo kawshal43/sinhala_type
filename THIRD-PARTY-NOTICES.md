@@ -1,5 +1,12 @@
 # Third-party notices
 
+## FFmpeg static binary
+
+This product bundles an FFmpeg executable obtained through `ffmpeg-static`.
+FFmpeg is licensed under the GNU General Public License (GPL), version 3 or later
+for this distribution. Source and license information are available at
+https://ffmpeg.org/ and https://github.com/eugeneware/ffmpeg-static.
+
 ## sinhala-unicode-coverter 1.0.2
 
 Copyright Janaka Chathuranga. Licensed under the MIT License:

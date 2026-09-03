@@ -6,13 +6,19 @@ AutoCap also includes a built-in Sinhala Typer with dictionary-first Singlish tr
 
 ## Features
 
-- **AI Auto Captioning**: Instant speech-to-text subtitle generation for Sinhala, English, and multilingual audio using Groq Whisper, OpenAI Whisper, or Google Gemini.
-- **Premiere Pro Integration**: One-click import directly into the active Premiere Pro project bin (`app.project.importFiles`), ready to drag onto caption tracks.
-- **Triple Font Encoding for Subtitles**: Instant toggle between modern **Unicode**, **Wije font** (DL-Manel), and **ISI font** (FM-Abhaya) encodings.
-- **Smart Subtitle Editor**: Live timing edits, play/preview audio segments, split/merge lines, global time shifting (+/- 0.5s), and auto-split by CPL (Characters Per Line) for Shorts/Reels.
+- **AI Auto Captioning**: Instant speech-to-text subtitle generation for Sinhala, English, and multilingual audio using Google Gemini, Groq Whisper, or OpenAI Whisper.
+- **Hybrid Desktop Architecture**: Local Media Worker companion daemon (`workerServer.ts`) on port 48128 with zero-configuration fallback to built-in VAD chunking.
+- **Gemini Files API for Large Media**: Automatic resumable binary upload for audio files $\ge 4\text{ MB}$, eliminating Base64 payload bottlenecks.
+- **Premiere Pro Timeline Integration**: Direct timeline placement onto caption tracks plus project bin import (`app.project.importFiles`).
+- **Triple Font Encoding for Subtitles**: Instant toggle between modern **Unicode**, **Wije font** (DL-Manel), and **ISI font** (FM-Abhaya / IsiBasuru) encodings.
+- **Smart Subtitle Editor**: Live timing edits, per-caption AI retry (`[🔄]`), Undo/Redo history stack, batch Find & Replace, timing overlap auto-repair, and auto-split by CPL.
+- **Live Readability & Reading Speed Meter**: Real-time Characters Per Line (CPL) and Characters Per Second (CPS) metrics with visual pacing warnings.
+- **Permanent Multi-Tier Storage**: Automatically persists API keys and preferences to `~/.autocap-config.json` on disk, surviving CEP cache clears and Premiere restarts.
 - **Microphone Recording**: Record voiceover audio directly inside the panel to generate captions on the fly.
 - **Subtitle Export**: Standard `.srt` (SubRip), `.vtt` (WebVTT), and clipboard copy.
 - **Sinhala Typer**: Dictionary-first Singlish conversion, on-screen Easy Phonetic and Wijesekara keyboards, typing hints, and English text protection (`{Braces}`).
+
+For full technical specifications and subsystem design, see [ARCHITECTURE.md](file:///d:/2026/kawshal/AutoCap/sinhala_type/ARCHITECTURE.md).
 
 ## Development
 
@@ -20,6 +26,7 @@ AutoCap also includes a built-in Sinhala Typer with dictionary-first Singlish tr
 npm install
 npm test
 npm run build
+npm run worker     # Starts companion Local Media Worker daemon
 ```
 
 - `npm run install:cep` builds and opens the guided Windows installer for the current user.

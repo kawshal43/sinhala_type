@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
@@ -16,6 +16,22 @@ function premiereUxpBundle(): Plugin {
 
       writeFileSync(htmlPath, html, "utf8");
       copyFileSync(resolve("manifest.json"), resolve(outputDirectory, "manifest.json"));
+
+      // Ship the platform-specific FFmpeg binary installed on the build host.
+      // Windows and macOS releases should be built on their matching platform.
+      const ffmpegPackagePath = resolve(
+        "node_modules",
+        "ffmpeg-static",
+        process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
+      );
+      if (existsSync(ffmpegPackagePath)) {
+        const binDirectory = resolve(outputDirectory, "bin");
+        mkdirSync(binDirectory, { recursive: true });
+        copyFileSync(
+          ffmpegPackagePath,
+          resolve(binDirectory, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
+        );
+      }
       const cepOutputDirectory = resolve("cep", "AutoCap", "dist");
       rmSync(cepOutputDirectory, { recursive: true, force: true });
       cpSync(outputDirectory, cepOutputDirectory, { recursive: true, force: true });

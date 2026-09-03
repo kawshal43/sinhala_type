@@ -74,8 +74,8 @@ try {
   if ($tempPath) {
     $cepCacheRoot = Join-Path $tempPath "cep_cache"
     if (Test-Path -LiteralPath $cepCacheRoot) {
-      $panelCaches = Get-ChildItem -LiteralPath $cepCacheRoot -Directory -Filter "PPRO_*_com.autocap.premiere.cep.panel" -ErrorAction SilentlyContinue
-      $legacyCaches = Get-ChildItem -LiteralPath $cepCacheRoot -Directory -Filter "PPRO_*_com.sinhalatype.premiere.cep.panel" -ErrorAction SilentlyContinue
+      $panelCaches = @(Get-ChildItem -LiteralPath $cepCacheRoot -Directory -Filter "PPRO_*_com.autocap.premiere.cep.panel" -ErrorAction SilentlyContinue)
+      $legacyCaches = @(Get-ChildItem -LiteralPath $cepCacheRoot -Directory -Filter "PPRO_*_com.sinhalatype.premiere.cep.panel" -ErrorAction SilentlyContinue)
       foreach ($c in ($panelCaches + $legacyCaches)) {
         Remove-Item -LiteralPath $c.FullName -Recurse -Force -ErrorAction SilentlyContinue
       }

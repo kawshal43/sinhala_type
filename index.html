@@ -45,8 +45,19 @@
               <select id="select-audio-track" aria-label="Select Premiere Pro Audio Track">
                 <option value="">(Click Scan Tracks to list sequence audio)</option>
               </select>
+            </div>
+            <!-- Clip Selector for tracks with multiple audio clips -->
+            <div id="clip-selector-row" class="clip-selector-row" hidden>
+              <select id="select-audio-clip" aria-label="Select Audio Clip on Track">
+                <option value="all">All Audio Clips in Track (Primary / Combined)</option>
+              </select>
+            </div>
+            <div class="track-action-buttons-row">
               <button id="btn-load-track" class="secondary-btn track-load-btn" type="button">
-                Load Track
+                Load Selected Audio
+              </button>
+              <button id="btn-remove-track" class="secondary-btn track-remove-btn" type="button" title="Unload / remove current audio" hidden>
+                &#x2715; Remove Audio
               </button>
             </div>
             <div id="track-load-status" class="track-load-status" hidden>
@@ -87,7 +98,10 @@
           <div id="audio-preview-card" class="audio-preview-card" hidden>
             <div class="audio-meta">
               <span id="audio-filename">audio.mp3</span>
-              <span id="audio-duration">00:00</span>
+              <div class="audio-meta-right">
+                <span id="audio-duration">00:00</span>
+                <button id="btn-clear-audio" class="audio-clear-btn" type="button" title="Remove / Unload audio">&#x2715;</button>
+              </div>
             </div>
             <audio id="audio-player" controls preload="metadata"></audio>
           </div>
@@ -125,7 +139,15 @@
                 <span class="spinner" aria-hidden="true"></span>
                 <span id="caption-status-text">Transcribing...</span>
               </div>
-              <span id="caption-status-percent" class="status-percent-badge">0%</span>
+              <div class="status-right-controls">
+                <span id="caption-status-percent" class="status-percent-badge">0%</span>
+                <button id="btn-pause-transcribe" class="caption-ctrl-btn" type="button" title="Pause or Resume caption generation">
+                  <span id="pause-icon">&#x23F8;</span> <span id="pause-label">Pause</span>
+                </button>
+                <button id="btn-stop-transcribe" class="caption-ctrl-btn stop-btn" type="button" title="Stop and keep current captions">
+                  <span>&#x23F9;</span> Stop
+                </button>
+              </div>
             </div>
             <div class="progress-bar-container">
               <div id="caption-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
@@ -140,7 +162,10 @@
               <h2>Captions Editor</h2>
               <span id="cues-count">0 captions</span>
             </div>
-            <span id="detected-lang-pill" class="lang-pill" hidden>Sinhala Detected</span>
+            <div class="header-right-badges">
+              <span id="verification-status-badge" class="verification-badge" hidden>&#x2713; 100% Verified</span>
+              <span id="detected-lang-pill" class="lang-pill" hidden>Sinhala Detected</span>
+            </div>
           </div>
 
           <!-- Sinhala Font Tests & Live Preview Section -->
@@ -176,12 +201,27 @@
             </button>
           </div>
 
-          <!-- Tools toolbar: Add, Shift, Split -->
+          <!-- Tools toolbar: Undo/Redo, Add, Search, Repair, Recheck, Shift, Split -->
           <div class="tools-bar">
+            <button id="btn-undo-cue" class="tool-chip" type="button" title="Undo last edit" disabled>&#x21A9; Undo</button>
+            <button id="btn-redo-cue" class="tool-chip" type="button" title="Redo edit" disabled>&#x21AA; Redo</button>
             <button id="btn-add-cue" class="tool-chip" type="button">+ Add Line</button>
+            <button id="btn-toggle-search" class="tool-chip" type="button" title="Search and replace text in captions">&#x1F50D; Find &amp; Replace</button>
+            <button id="btn-repair-timing" class="tool-chip" type="button" title="Automatically repair overlapping timestamps">&#x23F1; Fix Overlaps</button>
+            <button id="btn-recheck-cues" class="tool-chip verify-chip" type="button" title="Recheck incomplete captions and fill missing gaps">&#x2714; Recheck &amp; Fill</button>
             <button id="btn-shift-back" class="tool-chip" type="button" title="Shift earlier by 0.5s">-0.5s</button>
             <button id="btn-shift-forward" class="tool-chip" type="button" title="Shift later by 0.5s">+0.5s</button>
             <button id="btn-auto-cpl" class="tool-chip" type="button" title="Split long sentences into short subtitle cards">Split Long Lines</button>
+          </div>
+
+          <!-- Collapsible Search and Replace Panel -->
+          <div id="search-replace-panel" class="search-replace-panel" hidden>
+            <div class="search-replace-row">
+              <input id="search-find-input" type="text" placeholder="Find text..." class="search-input" />
+              <input id="search-replace-input" type="text" placeholder="Replace with..." class="search-input" />
+              <button id="btn-exec-replace" type="button" class="action-mini-btn">Replace All</button>
+              <button id="btn-close-search" type="button" class="close-mini-btn" title="Close">&#x2715;</button>
+            </div>
           </div>
 
           <div class="click-copy-hint">
@@ -261,27 +301,46 @@
           <div class="settings-field">
             <div class="settings-label-row">
               <label for="input-gemini-key">Google Gemini API Key (Recommended)</label>
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+              <div class="settings-actions-top">
+                <button id="btn-test-gemini" type="button" class="btn-test-key" title="Verify Google Gemini API Key">&#x26A1; Test Key</button>
+                <span id="gemini-key-status" class="key-status-badge">&#x2713; Saved</span>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+              </div>
             </div>
-            <input type="password" id="input-gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+            <div class="input-with-toggle">
+              <input type="password" id="input-gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+              <button id="toggle-gemini-key" type="button" class="eye-toggle-btn" title="Show/Hide Key">&#x1F441;</button>
+            </div>
             <span class="field-hint">High-accuracy multimodal transcription with Gemini 3.6 Flash.</span>
           </div>
 
           <div class="settings-field">
             <div class="settings-label-row">
               <label for="input-groq-key">Groq API Key</label>
-              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" class="ext-link">Get Free Key &#x2197;</a>
+              <div class="settings-actions-top">
+                <span id="groq-key-status" class="key-status-badge">&#x2713; Saved</span>
+                <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" class="ext-link">Get Free Key &#x2197;</a>
+              </div>
             </div>
-            <input type="password" id="input-groq-key" placeholder="gsk_..." autocomplete="off" />
+            <div class="input-with-toggle">
+              <input type="password" id="input-groq-key" placeholder="gsk_..." autocomplete="off" />
+              <button id="toggle-groq-key" type="button" class="eye-toggle-btn" title="Show/Hide Key">&#x1F441;</button>
+            </div>
             <span class="field-hint">Ultra-fast Whisper-large-v3 transcription with free tier.</span>
           </div>
 
           <div class="settings-field">
             <div class="settings-label-row">
               <label for="input-openai-key">OpenAI API Key</label>
-              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+              <div class="settings-actions-top">
+                <span id="openai-key-status" class="key-status-badge">&#x2713; Saved</span>
+                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" class="ext-link">Get Key &#x2197;</a>
+              </div>
             </div>
-            <input type="password" id="input-openai-key" placeholder="sk-..." autocomplete="off" />
+            <div class="input-with-toggle">
+              <input type="password" id="input-openai-key" placeholder="sk-..." autocomplete="off" />
+              <button id="toggle-openai-key" type="button" class="eye-toggle-btn" title="Show/Hide Key">&#x1F441;</button>
+            </div>
             <span class="field-hint">Used for Whisper-1 model transcription.</span>
           </div>
 
@@ -292,6 +351,7 @@
           </div>
 
           <button id="btn-save-settings" class="primary full-width" type="button">Save Settings</button>
+          <div id="settings-save-feedback" class="settings-feedback"></div>
         </div>
       </section>
 

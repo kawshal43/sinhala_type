@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateSrt, generateVtt, parseSrt, parseVtt, type SubtitleCue } from "../src/core/subtitles/srtParser";
+import { generateSrt, generateVtt, parseCaptionResponse, parseSrt, parseVtt, type SubtitleCue } from "../src/core/subtitles/srtParser";
 
 describe("srtParser", () => {
   const sampleSrt = `1
@@ -61,6 +61,33 @@ WebVTT subtitle text`;
     expect(parseSrt("")).toEqual([]);
     expect(parseSrt("   \n\n  ")).toEqual([]);
     expect(generateSrt([])).toBe("");
+  });
+
+  it("parses bracketed AI captions without leaking metadata into text", () => {
+    const response = `[id: p_10] [00:00,432 --> 00:03,632] ආයුබෝවන් ඔබ සැමට
+[id: p_11] [00:04,335 --> 00:09,115] මේ දෙවන පේළිය`;
+    const cues = parseCaptionResponse(response);
+    expect(cues).toHaveLength(2);
+    expect(cues[0]).toMatchObject({ start: 0.432, end: 3.632, text: "ආයුබෝවන් ඔබ සැමට" });
+    expect(cues[1]).toMatchObject({ start: 4.335, end: 9.115, text: "මේ දෙවන පේළිය" });
+    expect(cues.map((cue) => cue.text).join(" ")).not.toMatch(/\[id:|-->/i);
+  });
+
+  it("rejects unstructured model commentary instead of making it a caption", () => {
+    expect(parseCaptionResponse("Here are your requested subtitles.")).toEqual([]);
+  });
+
+  it("parses schema-constrained Gemini JSON", () => {
+    const cues = parseCaptionResponse(JSON.stringify({
+      segments: [
+        { start: 0.25, end: 2.5, text: "පළමු වාක්‍යය" },
+        { start: 2.7, end: 5.1, text: "Second caption" }
+      ]
+    }));
+    expect(cues).toEqual([
+      { id: 1, start: 0.25, end: 2.5, text: "පළමු වාක්‍යය" },
+      { id: 2, start: 2.7, end: 5.1, text: "Second caption" }
+    ]);
   });
 });
 

@@ -1,4 +1,5 @@
 import { formatSrtTime, formatVttTime, parseTimestamp } from "./timeUtils";
+import { validateAndSanitizeSegments } from "./schemaValidator";
 
 export interface SubtitleWord {
   word: string;
@@ -11,7 +12,71 @@ export interface SubtitleCue {
   start: number; // in seconds
   end: number;   // in seconds
   text: string;
+  confidence?: number;
   words?: SubtitleWord[];
+}
+
+const TIMESTAMP_TOKEN = "\\d{1,2}:\\d{2}(?::\\d{2})?[,.]\\d{1,3}";
+
+function isValidCue(start: number, end: number, text: string): boolean {
+  return Number.isFinite(start) && Number.isFinite(end) && end > start && text.trim().length > 0;
+}
+
+/** Parses strict SRT plus the bracketed timestamp format sometimes returned by AI models. */
+export function parseCaptionResponse(content: string): SubtitleCue[] {
+  if (!content || !content.trim()) return [];
+
+  const cleaned = content
+    .replace(/^\s*```(?:srt|vtt|text)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+
+  try {
+    const json = JSON.parse(cleaned);
+    const segments = Array.isArray(json) ? json : json?.segments;
+    if (Array.isArray(segments)) {
+      const validated = validateAndSanitizeSegments(segments);
+      if (validated.length > 0) {
+        return validated.map((cue, index) => ({
+          id: index + 1,
+          start: cue.start,
+          end: cue.end,
+          text: cue.text,
+          confidence: cue.confidence
+        }));
+      }
+    }
+  } catch {
+    // Continue with legacy SRT/bracketed response support.
+  }
+
+  const cues: SubtitleCue[] = [];
+  const bracketPattern = new RegExp(
+    `^(?:\\[\\s*(?:id\\s*:\\s*)?[^\\]]+\\]\\s*)?\\[?\\s*(${TIMESTAMP_TOKEN})\\s*-->\\s*(${TIMESTAMP_TOKEN})\\s*\\]?\\s*(.*)$`,
+    "i"
+  );
+
+  for (const line of cleaned.split("\n")) {
+    const match = line.trim().match(bracketPattern);
+    if (!match) continue;
+    const start = parseTimestamp(match[1]);
+    const end = parseTimestamp(match[2]);
+    const text = match[3]
+      .replace(/^[-:|]+\s*/, "")
+      .replace(/^\[(?:text|caption)\s*:\s*/i, "")
+      .replace(/\]\s*$/, "")
+      .trim();
+    if (isValidCue(start, end, text)) {
+      cues.push({ id: cues.length + 1, start, end, text });
+    }
+  }
+
+  if (cues.length > 0) return cues;
+
+  return parseSrt(cleaned).filter((cue) =>
+    isValidCue(cue.start, cue.end, cue.text)
+  );
 }
 
 /**

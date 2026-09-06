@@ -309,7 +309,13 @@ Do not include identifiers, markdown, notes, or timestamps inside the text field
     }
   };
 
-  const candidateModels = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash-lite"];
+  const candidateModels = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-1.5-pro"
+  ];
   let lastError = "";
 
   try {
@@ -641,9 +647,9 @@ Output ONLY the clean transcribed sentence text. Do NOT output timestamps, forma
     };
 
     const defaultCandidates = [
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "gemini-3.5-flash-lite",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-2.0-flash-lite",
       "gemini-2.5-flash"
     ];
 

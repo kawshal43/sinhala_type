@@ -1276,8 +1276,8 @@ function renderPhoneticKeyboard(): void {
   for (const item of activeCategory.keys) {
     keyboardKeys.appendChild(addKeyButton(item.output, item.label ?? item.token, () => insertIntoTyperInput(item.token)));
   }
-  const captionEl = document.querySelector("#keyboard-caption");
-  if (captionEl) captionEl.textContent = "Keys insert Singlish at the current cursor position.";
+  const cap = document.querySelector("#keyboard-caption");
+  if (cap) cap.textContent = "Keys insert Singlish at the current cursor position.";
 }
 
 function renderWijesekaraKeyboard(): void {
@@ -1286,48 +1286,37 @@ function renderWijesekaraKeyboard(): void {
   for (const row of WIJESEKARA_ROWS) {
     const rowElement = document.createElement("div");
     rowElement.className = "keyboard-row";
-    for (const key of row) {
-      const output = wijeShifted && key.shifted ? key.shifted : key.normal;
-      const sub = key.shifted ? `${key.normal} ${key.shifted}` : key.normal;
-      rowElement.appendChild(addKeyButton(output, sub, () => insertIntoTyperInput(output)));
+    for (const item of row) {
+      const value = wijeShifted && item.shifted ? item.shifted : item.normal;
+      rowElement.appendChild(addKeyButton(value, wijeShifted ? item.physical.toUpperCase() : item.physical, () => insertIntoTyperInput(value)));
     }
     keyboardKeys.appendChild(rowElement);
   }
 
   const actions = document.createElement("div");
-  actions.className = "keyboard-actions";
-  const shiftButton = addKeyButton("Shift", "shift", () => {
+  actions.className = "keyboard-row";
+  const shift = addKeyButton("\u21E7", wijeShifted ? "Shift on" : "Shift", () => {
     wijeShifted = !wijeShifted;
     renderWijesekaraKeyboard();
   }, true);
-  shiftButton.classList.toggle("active", wijeShifted);
-  shiftButton.setAttribute("aria-pressed", String(wijeShifted));
-  actions.appendChild(shiftButton);
+  shift.classList.toggle("active", wijeShifted);
+  actions.appendChild(shift);
   actions.appendChild(addKeyButton("Space", "space", () => insertIntoTyperInput(" "), true));
-  actions.appendChild(addKeyButton("Backspace", "backspace", () => {
+  actions.appendChild(addKeyButton("\u232B", "backspace", () => {
     applySelectionEdit(typerInput, deleteAtSelection(typerInput.value, typerInput.selectionStart, typerInput.selectionEnd));
-    renderTyper();
   }, true));
   actions.appendChild(addKeyButton("\u21B5", "enter", () => insertIntoTyperInput("\n"), true));
   keyboardKeys.appendChild(actions);
-  const captionEl = document.querySelector("#keyboard-caption");
-  if (captionEl) captionEl.textContent = "SLS Wijesekara keys insert Sinhala Unicode directly.";
+  const cap = document.querySelector("#keyboard-caption");
+  if (cap) cap.textContent = "SLS Wijesekara keys insert Sinhala Unicode directly.";
 }
 
 function renderKeyboard(): void {
-  if (keyboardLayout === "easy") {
-    easyLayoutButton.classList.add("active");
-    wijeLayoutButton.classList.remove("active");
-    easyLayoutButton.setAttribute("aria-selected", "true");
-    wijeLayoutButton.setAttribute("aria-selected", "false");
-    renderPhoneticKeyboard();
-  } else {
-    easyLayoutButton.classList.remove("active");
-    wijeLayoutButton.classList.add("active");
-    easyLayoutButton.setAttribute("aria-selected", "false");
-    wijeLayoutButton.setAttribute("aria-selected", "true");
-    renderWijesekaraKeyboard();
-  }
+  const easy = keyboardLayout === "easy";
+  easyLayoutButton.classList.toggle("active", easy);
+  wijeLayoutButton.classList.toggle("active", !easy);
+  if (easy) renderPhoneticKeyboard();
+  else renderWijesekaraKeyboard();
 }
 
 typerInput.addEventListener("input", renderTyper);
@@ -1350,8 +1339,8 @@ typerCopyButton.addEventListener("click", async () => {
   }
 });
 
-const pasteBtnEl = document.querySelector<HTMLButtonElement>("#paste");
-pasteBtnEl?.addEventListener("click", async () => {
+const pasteBtn = document.querySelector("#paste");
+pasteBtn?.addEventListener("click", async () => {
   try {
     typerInput.value = readFromHostClipboard() ?? (await navigator.clipboard.readText());
     renderTyper();
@@ -1455,14 +1444,8 @@ btnTestGemini?.addEventListener("click", async () => {
   btnTestGemini.textContent = "⏳ Testing...";
   btnTestGemini.className = "btn-test-key";
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: "ping" }] }]
-      })
-    });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, { method: "GET" });
     if (res.ok) {
       btnTestGemini.textContent = "✓ Key Valid!";
       btnTestGemini.className = "btn-test-key success";
@@ -1521,5 +1504,74 @@ btnSaveSettings.addEventListener("click", () => {
   }, 2500);
 });
 
+// Settings Language Selector sync
+const settingsLanguageSelect = document.querySelector<HTMLSelectElement>("#settings-language-select");
+if (settingsLanguageSelect) {
+  settingsLanguageSelect.value = appSettings.language || "si";
+  settingsLanguageSelect.addEventListener("change", () => {
+    appSettings.language = settingsLanguageSelect.value as any;
+    selectLanguage.value = settingsLanguageSelect.value;
+    saveSettings(appSettings);
+  });
+}
+
+// Settings Output Format Live Preview (Matching Reference Design)
+const settingsPreviewBox = document.querySelector<HTMLDivElement>("#settings-preview-box");
+const settingsBtnUnicode = document.querySelector<HTMLButtonElement>("#settings-mode-unicode");
+const settingsBtnWije = document.querySelector<HTMLButtonElement>("#settings-mode-wije");
+const settingsBtnIsi = document.querySelector<HTMLButtonElement>("#settings-mode-isi");
+
+function updateSettingsFormat(encoding: CaptionEncoding): void {
+  subtitleEncoding = encoding;
+  appSettings.defaultEncoding = encoding;
+  saveSettings(appSettings);
+
+  settingsBtnUnicode?.classList.toggle("active", encoding === "unicode");
+  settingsBtnWije?.classList.toggle("active", encoding === "wije");
+  settingsBtnIsi?.classList.toggle("active", encoding === "isi");
+
+  if (settingsPreviewBox) {
+    settingsPreviewBox.className = `format-preview-card font-${encoding}`;
+    const sampleText = "මම අද ගෙදර යනවා";
+    settingsPreviewBox.textContent = convertCaptionText(sampleText, encoding);
+  }
+}
+
+settingsBtnUnicode?.addEventListener("click", () => updateSettingsFormat("unicode"));
+settingsBtnWije?.addEventListener("click", () => updateSettingsFormat("wije"));
+settingsBtnIsi?.addEventListener("click", () => updateSettingsFormat("isi"));
+
+// Initial setup of settings preview
+updateSettingsFormat(appSettings.defaultEncoding || "unicode");
+
+// Settings Reset Button
+const btnResetSettings = document.querySelector<HTMLButtonElement>("#btn-reset-settings");
+btnResetSettings?.addEventListener("click", () => {
+  inputGeminiKey.value = "";
+  inputGroqKey.value = "";
+  inputOpenaiKey.value = "";
+  inputMaxCpl.value = "38";
+  if (settingsLanguageSelect) settingsLanguageSelect.value = "si";
+  selectLanguage.value = "si";
+  selectProvider.value = "gemini";
+  updateSettingsFormat("unicode");
+  updateKeyBadges();
+  notify("Settings reset to default values");
+});
+
 // Initial sequence scan
 scanPremiereTracks();
+
+// Live Companion Worker Backend Connection Check
+const statusReadyEl = document.querySelector<HTMLElement>(".status-ready");
+checkLocalWorkerHealth().then((health) => {
+  if (statusReadyEl) {
+    if (health) {
+      statusReadyEl.innerHTML = `<span class="status-dot"></span> Ready (Worker Active)`;
+      statusReadyEl.title = `AutoCap Local Media Worker companion process active (${health.version})`;
+    } else {
+      statusReadyEl.innerHTML = `<span class="status-dot"></span> Ready (Direct Engine)`;
+      statusReadyEl.title = "Direct in-browser engine active";
+    }
+  }
+}).catch(() => {});

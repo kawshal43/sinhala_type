@@ -50,6 +50,12 @@ import {
   type SequenceAudioTrackInfo,
   type SequenceClipInfo
 } from "./platform/premiereBridge";
+import { transcriptionJobController } from "./services/transcriptionJob";
+import { audioPresetManager } from "./services/audioPresetManager";
+import { runGeminiAudioDiagnostic } from "./services/geminiDiagnostics";
+import { premiereAudioClient } from "./platform/premiereAudio";
+import { premiereGraphicsClient } from "./platform/premiereGraphics";
+import type { AudioSourceRequest } from "./platform/premiereHostTypes";
 import {
   loadSettings,
   saveSettings,
@@ -1557,6 +1563,230 @@ btnResetSettings?.addEventListener("click", () => {
   updateSettingsFormat("unicode");
   updateKeyBadges();
   notify("Settings reset to default values");
+});
+
+// ==========================================================================
+// Audio Source Scope Segmented Selector
+// ==========================================================================
+let activeSourceKind: "sequence" | "track" | "range" = "sequence";
+const btnSrcKindSeq = document.querySelector<HTMLButtonElement>("#src-kind-seq");
+const btnSrcKindTrack = document.querySelector<HTMLButtonElement>("#src-kind-track");
+const btnSrcKindRange = document.querySelector<HTMLButtonElement>("#src-kind-range");
+const trackSelectWrapper = document.querySelector<HTMLDivElement>("#track-select-wrapper");
+
+function setAudioSourceKind(kind: "sequence" | "track" | "range"): void {
+  activeSourceKind = kind;
+  btnSrcKindSeq?.classList.toggle("active", kind === "sequence");
+  btnSrcKindTrack?.classList.toggle("active", kind === "track");
+  btnSrcKindRange?.classList.toggle("active", kind === "range");
+  if (trackSelectWrapper) {
+    trackSelectWrapper.hidden = kind !== "track";
+  }
+}
+
+btnSrcKindSeq?.addEventListener("click", () => setAudioSourceKind("sequence"));
+btnSrcKindTrack?.addEventListener("click", () => setAudioSourceKind("track"));
+btnSrcKindRange?.addEventListener("click", () => setAudioSourceKind("range"));
+
+// ==========================================================================
+// Audio Preset Management (Settings Tab)
+// ==========================================================================
+const audioPresetSelect = document.querySelector<HTMLSelectElement>("#audio-preset-select");
+const inputAudioPresetPath = document.querySelector<HTMLInputElement>("#input-audio-preset-path");
+const btnFindPresets = document.querySelector<HTMLButtonElement>("#btn-find-presets");
+const btnBrowsePreset = document.querySelector<HTMLButtonElement>("#btn-browse-preset");
+const btnTestPreset = document.querySelector<HTMLButtonElement>("#btn-test-preset");
+const presetStatusBadge = document.querySelector<HTMLElement>("#preset-status-badge");
+const presetFeedback = document.querySelector<HTMLDivElement>("#preset-feedback");
+
+// Populate initial preset
+if (inputAudioPresetPath) {
+  inputAudioPresetPath.value = audioPresetManager.getSelectedPresetPath();
+}
+
+audioPresetSelect?.addEventListener("change", () => {
+  if (audioPresetSelect.value && inputAudioPresetPath) {
+    inputAudioPresetPath.value = audioPresetSelect.value;
+    audioPresetManager.setSelectedPresetPath(audioPresetSelect.value);
+  }
+});
+
+inputAudioPresetPath?.addEventListener("input", () => {
+  audioPresetManager.setSelectedPresetPath(inputAudioPresetPath.value);
+});
+
+btnFindPresets?.addEventListener("click", async () => {
+  if (presetFeedback) {
+    presetFeedback.textContent = "Scanning for installed .epr presets...";
+    presetFeedback.className = "settings-feedback";
+  }
+  const presets = await audioPresetManager.discoverPresets();
+  if (audioPresetSelect) {
+    audioPresetSelect.innerHTML = "";
+    if (presets.length === 0) {
+      audioPresetSelect.innerHTML = '<option value="">No installed .epr presets found. Specify custom path below.</option>';
+    } else {
+      presets.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.path;
+        opt.textContent = `${p.name} (${p.formatSuggestion})`;
+        audioPresetSelect.appendChild(opt);
+      });
+      if (inputAudioPresetPath) inputAudioPresetPath.value = presets[0].path;
+      audioPresetManager.setSelectedPresetPath(presets[0].path);
+      if (presetFeedback) {
+        presetFeedback.textContent = `✓ Found ${presets.length} export presets! Selected: ${presets[0].name}`;
+        presetFeedback.className = "settings-feedback success";
+      }
+    }
+  }
+});
+
+btnBrowsePreset?.addEventListener("click", () => {
+  inputAudioPresetPath?.focus();
+  notify("Paste or edit the full path to your .epr audio export preset.");
+});
+
+btnTestPreset?.addEventListener("click", async () => {
+  const path = (inputAudioPresetPath?.value || "").trim();
+  const validation = audioPresetManager.validatePreset(path);
+  if (!validation.valid) {
+    notify(`Invalid Preset: ${validation.reason}`, true);
+    if (presetFeedback) {
+      presetFeedback.textContent = `❌ ${validation.reason}`;
+      presetFeedback.className = "settings-feedback error";
+    }
+    return;
+  }
+
+  notify("Testing audio export with selected preset...");
+  try {
+    const testReq: AudioSourceRequest = {
+      kind: "range",
+      sequenceId: "active_sequence",
+      startSec: 0,
+      endSec: 3.0
+    };
+    const res = await premiereAudioClient.exportTimelineAudio(testReq, "preset_test", path);
+    notify(`✓ Export test succeeded! (${res.durationSec}s audio generated)`);
+    if (presetFeedback) {
+      presetFeedback.textContent = `✓ Export test passed (${res.durationSec}s audio)! Preset is functional.`;
+      presetFeedback.className = "settings-feedback success";
+    }
+  } catch (err: any) {
+    notify(`Export test failed: ${err.message}`, true);
+    if (presetFeedback) {
+      presetFeedback.textContent = `❌ Test Failed: ${err.message}`;
+      presetFeedback.className = "settings-feedback error";
+    }
+  }
+});
+
+// ==========================================================================
+// Gemini Model Tier Preference & Audio Diagnostics
+// ==========================================================================
+const selectGeminiTier = document.querySelector<HTMLSelectElement>("#select-gemini-tier");
+const btnTestGeminiAudio = document.querySelector<HTMLButtonElement>("#btn-test-gemini-audio");
+const geminiDiagnosticFeedback = document.querySelector<HTMLDivElement>("#gemini-diagnostic-feedback");
+
+if (selectGeminiTier) {
+  selectGeminiTier.value = (appSettings as any).geminiModelPreference || "flash";
+  selectGeminiTier.addEventListener("change", () => {
+    (appSettings as any).geminiModelPreference = selectGeminiTier.value;
+    saveSettings(appSettings);
+  });
+}
+
+btnTestGeminiAudio?.addEventListener("click", async () => {
+  const key = inputGeminiKey.value.trim() || appSettings.geminiApiKey;
+  if (!key) {
+    notify("Please enter a Gemini API Key to test audio modality.", true);
+    inputGeminiKey.focus();
+    return;
+  }
+  if (btnTestGeminiAudio) {
+    btnTestGeminiAudio.disabled = true;
+    btnTestGeminiAudio.textContent = "⏳ Testing Audio Modality...";
+  }
+  try {
+    const pref = (selectGeminiTier?.value as "flash" | "pro") || "flash";
+    const result = await runGeminiAudioDiagnostic(key, pref);
+    if (result.success) {
+      notify(`✓ ${result.message}`);
+      if (geminiDiagnosticFeedback) {
+        geminiDiagnosticFeedback.textContent = `✓ ${result.message}`;
+        geminiDiagnosticFeedback.className = "settings-feedback success";
+      }
+    } else {
+      notify(`Audio Diagnostic: ${result.message}`, true);
+      if (geminiDiagnosticFeedback) {
+        geminiDiagnosticFeedback.textContent = `❌ ${result.message}`;
+        geminiDiagnosticFeedback.className = "settings-feedback error";
+      }
+    }
+  } finally {
+    if (btnTestGeminiAudio) {
+      btnTestGeminiAudio.disabled = false;
+      btnTestGeminiAudio.textContent = "🧪 Test Audio Modality";
+    }
+  }
+});
+
+// ==========================================================================
+// MOGRT Insertion in Sinhala Typer
+// ==========================================================================
+const btnToggleMogrt = document.querySelector<HTMLButtonElement>("#btn-toggle-mogrt");
+const mogrtConfigPanel = document.querySelector<HTMLDivElement>("#mogrt-config-panel");
+const mogrtTrackSelect = document.querySelector<HTMLSelectElement>("#mogrt-track-select");
+const mogrtDurationInput = document.querySelector<HTMLInputElement>("#mogrt-duration-input");
+const mogrtTemplateInput = document.querySelector<HTMLInputElement>("#mogrt-template-input");
+const btnBrowseMogrt = document.querySelector<HTMLButtonElement>("#btn-browse-mogrt");
+const btnExecuteInsertMogrt = document.querySelector<HTMLButtonElement>("#btn-execute-insert-mogrt");
+
+btnToggleMogrt?.addEventListener("click", () => {
+  if (mogrtConfigPanel) {
+    mogrtConfigPanel.hidden = !mogrtConfigPanel.hidden;
+  }
+});
+
+btnBrowseMogrt?.addEventListener("click", () => {
+  mogrtTemplateInput?.focus();
+  notify("Enter or paste the path to your verified .mogrt template file.");
+});
+
+btnExecuteInsertMogrt?.addEventListener("click", async () => {
+  const text = (document.querySelector<HTMLTextAreaElement>("#sinhala")?.value || "").trim();
+  if (!text) {
+    return notify("Please type or convert some Sinhala text first.", true);
+  }
+  const templatePath = (mogrtTemplateInput?.value || "").trim();
+  const trackIdx = parseInt(mogrtTrackSelect?.value || "2", 10);
+  const dur = parseFloat(mogrtDurationInput?.value || "4.0");
+
+  btnExecuteInsertMogrt.disabled = true;
+  btnExecuteInsertMogrt.textContent = "⏳ Inserting...";
+  try {
+    const res = await premiereGraphicsClient.insertGraphic({
+      sequenceId: "active_sequence",
+      templatePath,
+      text,
+      encoding: subtitleEncoding,
+      targetVideoTrackIndex: trackIdx,
+      durationSec: dur
+    });
+
+    if (res.success) {
+      notify(`✓ ${res.message}`);
+      if (mogrtConfigPanel) mogrtConfigPanel.hidden = true;
+    } else {
+      notify(`MOGRT Error: ${res.message}`, true);
+    }
+  } catch (err: any) {
+    notify(`Failed to insert graphic: ${err.message}`, true);
+  } finally {
+    btnExecuteInsertMogrt.disabled = false;
+    btnExecuteInsertMogrt.textContent = "✨ Place Graphic on Playhead";
+  }
 });
 
 // Initial sequence scan

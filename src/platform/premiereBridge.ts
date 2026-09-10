@@ -1,4 +1,8 @@
 import { copyToHostClipboard } from "./clipboard";
+import { parseSrt } from "../core/subtitles/srtParser";
+import { createTimelineCaptionDocument } from "../core/subtitles/timelineContext";
+import { premiereCaptionsClient } from "./premiereCaptions";
+import { transcriptionJobController } from "../services/transcriptionJob";
 
 export function isCep(): boolean {
   return typeof window !== "undefined" && typeof (window as any).__adobe_cep__ !== "undefined";
@@ -21,6 +25,34 @@ export function evalExtendScript(script: string): Promise<string> {
     }
     resolve("");
   });
+}
+
+/**
+ * Calls a host ExtendScript function defined in host.jsx via JSON RPC.
+ */
+export async function callHostFunction<T = any>(
+  functionName: string,
+  ...args: any[]
+): Promise<{ success: boolean; data?: T; error?: { code: string; message: string; details?: any } }> {
+  if (!isCep()) {
+    return {
+      success: false,
+      error: { code: "NOT_CEP", message: "Not running in CEP environment." }
+    };
+  }
+  const serializedArgs = args
+    .map((arg) => JSON.stringify(typeof arg === "string" ? arg : JSON.stringify(arg)))
+    .join(", ");
+  const script = `$._AutoCap_Host.${functionName}(${serializedArgs});`;
+  const rawResult = await evalExtendScript(script);
+  try {
+    return JSON.parse(rawResult);
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { code: "RPC_PARSE_ERROR", message: rawResult || err.message }
+    };
+  }
 }
 
 export interface SequenceClipInfo {
@@ -807,148 +839,26 @@ export async function importSubtitlesIntoPremiere(
   content: string,
   filename = "AutoCap_Subtitles.srt"
 ): Promise<{ success: boolean; message: string; filePath?: string }> {
-  if (!isCep()) {
-    // Fallback in browser: download file directly
-    downloadTextFile(content, filename);
-    return {
-      success: true,
-      message: "Downloaded subtitle file (Drag into Premiere Pro)."
-    };
-  }
-
   try {
-    const cepFs = (window as any).cep?.fs;
-    const nodeReq = getNodeRequire();
-    let tempDir = "";
+    const cues = parseSrt(content);
+    const activeDoc = transcriptionJobController.getActiveDocument();
+    const sequenceId = activeDoc?.sequenceId || "Active Sequence";
+    const timelineStartSec = activeDoc?.timelineStartSec || 0;
+    const audioDurationSec = activeDoc?.audioDurationSec || 0;
 
-    // 1. Determine directory path
-    if (typeof (window as any).__adobe_cep__?.getSystemPath === "function") {
-      tempDir = (window as any).__adobe_cep__.getSystemPath("temporary") || "";
-    }
+    const doc = createTimelineCaptionDocument(sequenceId, timelineStartSec, audioDurationSec, cues);
+    const result = await premiereCaptionsClient.importCaptionDocument(doc, filename.replace(/\.srt$/i, ""));
 
-    if (!tempDir && nodeReq) {
-      try {
-        const os = nodeReq("os");
-        tempDir = os.tmpdir();
-      } catch { /* ignore */ }
-    }
-
-    if (!tempDir) tempDir = "C:/Windows/Temp";
-
-    // Normalize path with forward slashes for ExtendScript
-    const normalizedDir = tempDir.replace(/\\/g, "/").replace(/\/+$/, "");
-    const safeTimestamp = Date.now();
-    const filePath = `${normalizedDir}/AutoCap_${safeTimestamp}.srt`;
-
-    // 2. Write file to disk
-    let fileWritten = false;
-    if (nodeReq) {
-      try {
-        const fs = nodeReq("fs");
-        fs.writeFileSync(filePath, content, "utf8");
-        fileWritten = true;
-      } catch (nodeErr) {
-        console.warn("Node writeFileSync failed in importSubtitles:", nodeErr);
-      }
-    }
-
-    if (!fileWritten && cepFs && typeof cepFs.writeFile === "function") {
-      const writeResult = cepFs.writeFile(filePath, content, (window as any).cep?.encoding?.UTF8 || 1);
-      fileWritten = writeResult?.err === 0;
-    }
-
-    if (!fileWritten) {
-      const expRes = await exportSubtitleFile(content, filename, "srt");
-      return {
-        success: expRes.success,
-        message: expRes.success
-          ? "Saved subtitle file to disk. Drag it into your Premiere Pro sequence."
-          : expRes.message
-      };
-    }
-
-    // 3. Call ExtendScript to import the file into Premiere Pro
-    // In Premiere Pro ExtendScript, app.project.importFiles() returns undefined (not a boolean).
-    // We check success by catching errors and verifying rootItem items.
-    const extendScript = `
-      (function() {
-        try {
-          if (!app.project) return JSON.stringify({ error: "No open Premiere Pro project." });
-          var importPath = "${filePath}";
-          var fileObj = new File(importPath);
-          if (!fileObj.exists) return JSON.stringify({ error: "File not found on disk: " + importPath });
-          
-          app.project.importFiles([importPath], true, app.project.rootItem, false);
-          
-          var itemName = fileObj.name;
-          var importedItem = null;
-          for (var i = 0; i < app.project.rootItem.children.numItems; i++) {
-            var item = app.project.rootItem.children[i];
-            if (item && item.name && (item.name.indexOf("AutoCap") !== -1 || item.getMediaPath() === importPath)) {
-              itemName = item.name;
-              importedItem = item;
-              break;
-            }
-          }
-          
-          var placedOnTimeline = false;
-          var seq = app.project.activeSequence;
-          if (seq && importedItem) {
-            try {
-              if (seq.videoTracks && seq.videoTracks.numTracks > 0) {
-                var topTrack = seq.videoTracks[seq.videoTracks.numTracks - 1];
-                if (topTrack) {
-                  topTrack.insertClip(importedItem, 0);
-                  placedOnTimeline = true;
-                }
-              }
-            } catch (tlErr) {
-              // Gracefully continue if direct track insertion requires user drag
-            }
-          }
-
-          return JSON.stringify({
-            success: true,
-            filePath: importPath,
-            itemName: itemName,
-            placedOnTimeline: placedOnTimeline
-          });
-        } catch (err) {
-          return JSON.stringify({ error: err.toString() });
-        }
-      })();
-    `;
-
-    const rawResult = await evalExtendScript(extendScript);
-    let parsed: any = {};
-    try {
-      parsed = JSON.parse(rawResult);
-    } catch {
-      parsed = { error: rawResult };
-    }
-
-    if (parsed.success) {
-      const placementNote = parsed.placedOnTimeline
-        ? "Inserted directly onto sequence timeline!"
-        : `Imported to Project bin ("${parsed.itemName}"). Drag onto timeline.`;
-      return {
-        success: true,
-        message: `Subtitles imported! ${placementNote}`,
-        filePath
-      };
-    } else {
-      console.warn("ExtendScript import error:", parsed.error);
-      const expRes = await exportSubtitleFile(content, filename, "srt");
-      return {
-        success: true,
-        message: `Saved SRT to disk (${parsed.error || "Drag into Premiere"}).`
-      };
-    }
+    return {
+      success: result.status !== "failed",
+      message: result.message,
+      filePath: result.filePath
+    };
   } catch (err: any) {
     const expRes = await exportSubtitleFile(content, filename, "srt");
     return {
       success: true,
-      message: `Saved SRT file: ${expRes.message}`
+      message: `Saved SRT to disk: ${err.message || expRes.message}`
     };
   }
 }

@@ -11,6 +11,8 @@ export interface SubtitleCue {
   id: number;
   start: number; // in seconds
   end: number;   // in seconds
+  startTime?: number; // alias for start
+  endTime?: number;   // alias for end
   text: string;
   confidence?: number;
   words?: SubtitleWord[];
@@ -110,16 +112,21 @@ export function parseSrt(content: string): SubtitleCue[] {
     const textLines = lines.slice(timeLineIndex + 1);
     const text = textLines.join("\n").trim();
 
+    const finalEnd = Math.max(start, end);
     cues.push({
       id: cues.length + 1,
       start,
-      end: Math.max(start, end),
+      end: finalEnd,
+      startTime: start,
+      endTime: finalEnd,
       text
     });
   }
 
   return cues;
 }
+
+export const serializeSrt = generateSrt;
 
 /**
  * Parses WebVTT content into an array of SubtitleCue objects.

@@ -1596,3 +1596,63 @@ textarea#singlish:focus {
 .font-isi {
   font-family: "Isibasur Preview", "IsiBasuru", "Isi", sans-serif !important;
 }
+
+/* ==========================================================================
+   Source Scope Segmented Buttons & MOGRT Insertion Styles
+   ========================================================================== */
+.source-kind-segmented {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  background: rgba(12, 13, 20, 0.6);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 10px;
+}
+
+.source-kind-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.source-kind-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.source-kind-btn.active {
+  background: var(--color-primary-dark);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 6px rgba(109, 40, 217, 0.35);
+}
+
+.mogrt-config-panel {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(12, 13, 20, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mogrt-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+

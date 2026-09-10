@@ -60,7 +60,7 @@ import { premiereAudioClient } from "./platform/premiereAudio";
 import { premiereGraphicsClient } from "./platform/premiereGraphics";
 import { premiereCaptionsClient } from "./platform/premiereCaptions";
 import { temporaryMedia } from "./services/temporaryMedia";
-import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest, GraphicStyleOptions } from "./platform/premiereHostTypes";
+import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest } from "./platform/premiereHostTypes";
 import {
   loadSettings,
   saveSettings,
@@ -273,20 +273,8 @@ const captionGraphicsDrawer = $("#caption-graphics-drawer");
 const premiereBtnIcon = $("#premiere-btn-icon");
 const premiereBtnText = $("#premiere-btn-text");
 
-const captionGraphicFont = $("#caption-graphic-font") as HTMLInputElement;
-const captionGraphicSize = $("#caption-graphic-size") as HTMLInputElement;
-const captionGraphicColor = $("#caption-graphic-color") as HTMLInputElement;
-const captionGraphicPositionPreset = $("#caption-graphic-position-preset") as HTMLSelectElement;
-const customCoordsContainer = $("#custom-coords-container");
-const captionGraphicX = $("#caption-graphic-x") as HTMLInputElement;
-const captionGraphicY = $("#caption-graphic-y") as HTMLInputElement;
-const captionGraphicAlign = $("#caption-graphic-align") as HTMLSelectElement;
-const captionGraphicAnimation = $("#caption-graphic-animation") as HTMLSelectElement;
 const captionGraphicTrack = $("#caption-graphic-track") as HTMLSelectElement;
 const captionGraphicMode = $("#caption-graphic-mode") as HTMLSelectElement;
-const captionGraphicStrokeToggle = $("#caption-graphic-stroke-toggle") as HTMLInputElement;
-const captionGraphicShadow = $("#caption-graphic-shadow") as HTMLInputElement;
-const captionGraphicBackground = $("#caption-graphic-background") as HTMLInputElement;
 
 const graphicInsertionProgress = $("#graphic-insertion-progress");
 const graphicProgressFill = $("#graphic-progress-fill");
@@ -1161,9 +1149,6 @@ type SavedGraphicOptions = {
   outputFormat?: "native" | "graphics";
   track?: number;
   mode?: "add" | "replace" | "timing-only";
-  positionPreset?: string;
-  style?: GraphicStyleOptions;
-  strokeEnabled?: boolean;
   customMogrtPath?: string;
 };
 const GRAPHIC_OPTIONS_KEY = "autocap.captionGraphics.v2";
@@ -1175,31 +1160,12 @@ function numberValue(selector: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function readGraphicStyle(): GraphicStyleOptions {
-  const strokeOn = captionGraphicStrokeToggle?.checked ?? true;
-  return {
-    fontFamily: captionGraphicFont.value.trim() || "Noto Sans Sinhala",
-    fontSize: numberValue("#caption-graphic-size", 64),
-    fillColor: captionGraphicColor.value || "#ffffff",
-    positionX: numberValue("#caption-graphic-x", 960),
-    positionY: numberValue("#caption-graphic-y", 930),
-    alignment: (captionGraphicAlign.value as GraphicStyleOptions["alignment"]) || "center",
-    strokeWidth: strokeOn ? numberValue("#caption-graphic-stroke", 3) : 0,
-    shadowEnabled: captionGraphicShadow.checked,
-    backgroundEnabled: captionGraphicBackground.checked,
-    animation: (captionGraphicAnimation.value as GraphicStyleOptions["animation"]) || "fade"
-  };
-}
-
 function saveGraphicOptions(): void {
   try {
     const data: SavedGraphicOptions = {
       outputFormat: outputModeGraphics.checked ? "graphics" : "native",
       track: numberValue("#caption-graphic-track", 2),
       mode: (captionGraphicMode.value as any) || "add",
-      positionPreset: captionGraphicPositionPreset.value || "bottom",
-      style: readGraphicStyle(),
-      strokeEnabled: captionGraphicStrokeToggle?.checked ?? true,
       customMogrtPath: inputCustomMogrtOverride?.value.trim() || ""
     };
     localStorage.setItem(GRAPHIC_OPTIONS_KEY, JSON.stringify(data));
@@ -1219,24 +1185,6 @@ function loadGraphicOptions(): void {
 
     if (typeof saved.track === "number") captionGraphicTrack.value = String(saved.track);
     if (saved.mode) captionGraphicMode.value = saved.mode;
-    if (saved.positionPreset) {
-      captionGraphicPositionPreset.value = saved.positionPreset;
-      customCoordsContainer.hidden = saved.positionPreset !== "custom";
-    }
-
-    if (saved.style?.fontFamily) captionGraphicFont.value = saved.style.fontFamily;
-    if (saved.style?.fontSize) captionGraphicSize.value = String(saved.style.fontSize);
-    if (saved.style?.fillColor) captionGraphicColor.value = saved.style.fillColor;
-    if (saved.style?.positionX !== undefined) captionGraphicX.value = String(saved.style.positionX);
-    if (saved.style?.positionY !== undefined) captionGraphicY.value = String(saved.style.positionY);
-    if (saved.style?.alignment) captionGraphicAlign.value = saved.style.alignment;
-    if (saved.style?.animation) captionGraphicAnimation.value = saved.style.animation;
-
-    if (saved.strokeEnabled !== undefined && captionGraphicStrokeToggle) {
-      captionGraphicStrokeToggle.checked = saved.strokeEnabled;
-    }
-    if (saved.style?.shadowEnabled !== undefined) captionGraphicShadow.checked = saved.style.shadowEnabled;
-    if (saved.style?.backgroundEnabled !== undefined) captionGraphicBackground.checked = saved.style.backgroundEnabled;
 
     if (saved.customMogrtPath && inputCustomMogrtOverride) {
       inputCustomMogrtOverride.value = saved.customMogrtPath;
@@ -1261,39 +1209,9 @@ outputModeGraphics.addEventListener("change", () => {
   saveGraphicOptions();
 });
 
-captionGraphicPositionPreset.addEventListener("change", () => {
-  const preset = captionGraphicPositionPreset.value;
-  if (preset === "bottom") {
-    captionGraphicX.value = "960";
-    captionGraphicY.value = "930";
-    customCoordsContainer.hidden = true;
-  } else if (preset === "center") {
-    captionGraphicX.value = "960";
-    captionGraphicY.value = "540";
-    customCoordsContainer.hidden = true;
-  } else if (preset === "top") {
-    captionGraphicX.value = "960";
-    captionGraphicY.value = "150";
-    customCoordsContainer.hidden = true;
-  } else if (preset === "custom") {
-    customCoordsContainer.hidden = false;
-  }
-  saveGraphicOptions();
-});
-
 [
-  captionGraphicFont,
-  captionGraphicSize,
-  captionGraphicColor,
-  captionGraphicX,
-  captionGraphicY,
-  captionGraphicAlign,
-  captionGraphicAnimation,
   captionGraphicTrack,
-  captionGraphicMode,
-  captionGraphicStrokeToggle,
-  captionGraphicShadow,
-  captionGraphicBackground
+  captionGraphicMode
 ].forEach((el) => {
   el?.addEventListener("change", saveGraphicOptions);
 });
@@ -1329,7 +1247,6 @@ async function insertCurrentCaptionsAsGraphics(): Promise<void> {
         encoding,
         targetVideoTrackIndex: numberValue("#caption-graphic-track", 2),
         cues: currentCues,
-        style: readGraphicStyle(),
         mode: (captionGraphicMode.value as any) || "add"
       },
       {

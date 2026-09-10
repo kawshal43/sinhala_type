@@ -74,17 +74,21 @@ try {
   foreach ($fc in $fontCandidates) {
     if (Test-Path -LiteralPath $fc) {
       Get-ChildItem -Path $fc -Filter "*.ttf" -ErrorAction SilentlyContinue | ForEach-Object {
-        $destFont = Join-Path $userFontsDir $_.Name
-        if (-not (Test-Path -LiteralPath $destFont)) {
-          Copy-Item -Path $_.FullName -Destination $destFont -Force
-          $fontName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name) + " (TrueType)"
-          New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $fontName -Value $destFont -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+        $fontItem = $_
+        $destFont = Join-Path $userFontsDir $fontItem.Name
+        try {
+          Copy-Item -Path $fontItem.FullName -Destination $destFont -Force -ErrorAction Stop
+        } catch {
+          # If the font is already active and locked by Windows GDI, skip overwriting
+          Write-Host "  [Notice] Font $($fontItem.Name) is currently in use by Windows; keeping active version." -ForegroundColor DarkGray
         }
+        $fontName = [System.IO.Path]::GetFileNameWithoutExtension($fontItem.Name) + " (TrueType)"
+        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $fontName -Value $destFont -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
       }
       break
     }
   }
-  Write-Host "[OK] Verified mixed-language Sinhala fonts in Windows user fonts." -ForegroundColor Green
+  Write-Host "[OK] Installed Unicode Sinhala + English fonts into Windows user fonts." -ForegroundColor Green
 
   # 4. Enable PlayerDebugMode for all CSXS versions (allows unsigned extensions to run)
   foreach ($csxsVer in @("9", "10", "11", "12", "13", "14", "15", "16")) {

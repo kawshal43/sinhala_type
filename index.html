@@ -49,12 +49,17 @@
 
           <div class="premiere-track-box">
             <div class="premiere-track-header">
-              <span class="track-header-title">&#x1F3AC; Audio Track / Layer</span>
+              <span class="track-header-title">&#x1F3AC; Audio Source</span>
               <button id="btn-refresh-tracks" class="track-refresh-btn" type="button" title="Scan Premiere Pro sequence audio tracks">
                 &#x1F504; Scan Tracks
               </button>
             </div>
-            <div class="track-controls-row">
+            <div class="source-kind-segmented" role="group" aria-label="Audio Source Scope">
+              <button id="src-kind-seq" class="source-kind-btn active" type="button" data-kind="sequence">Entire Sequence</button>
+              <button id="src-kind-track" class="source-kind-btn" type="button" data-kind="track">Audio Track</button>
+              <button id="src-kind-range" class="source-kind-btn" type="button" data-kind="range">Selected Range</button>
+            </div>
+            <div id="track-select-wrapper" class="track-controls-row" hidden>
               <select id="select-audio-track" class="custom-select" aria-label="Select Premiere Pro Audio Track">
                 <option value="">(Click Scan Tracks to list sequence audio)</option>
               </select>
@@ -344,7 +349,38 @@
             <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
             <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
           </section>
-          <button id="copy" class="primary-btn copy-action full-width" type="button">Copy Unicode</button>
+          <div class="typer-actions-row form-grid-2">
+            <button id="copy" class="primary-btn copy-action" type="button">Copy Unicode</button>
+            <button id="btn-toggle-mogrt" class="secondary-btn mogrt-toggle-btn" type="button" title="Insert as Motion Graphics Template in Premiere">
+              &#x1F3A8; Insert Graphic (MOGRT)
+            </button>
+          </div>
+
+          <div id="mogrt-config-panel" class="mogrt-config-panel" hidden>
+            <div class="form-grid-2">
+              <div class="settings-field">
+                <label for="mogrt-track-select">Target Video Track</label>
+                <select id="mogrt-track-select" class="custom-select">
+                  <option value="0">Video 1 (V1)</option>
+                  <option value="1">Video 2 (V2)</option>
+                  <option value="2" selected>Video 3 (V3)</option>
+                  <option value="3">Video 4 (V4)</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="mogrt-duration-input">Duration (sec)</label>
+                <input type="number" id="mogrt-duration-input" class="text-input" min="0.5" max="60" value="4.0" step="0.5" />
+              </div>
+            </div>
+            <div class="settings-field">
+              <label for="mogrt-template-input">Motion Graphic Template (.mogrt)</label>
+              <div class="api-key-row">
+                <input type="text" id="mogrt-template-input" class="text-input" placeholder="Path to verified .mogrt file" />
+                <button id="btn-browse-mogrt" type="button" class="btn-test-key">&#x1F4C1; Browse</button>
+              </div>
+            </div>
+            <button id="btn-execute-insert-mogrt" type="button" class="primary-btn full-width">&#x2728; Place Graphic on Playhead</button>
+          </div>
         </div>
       </section>
 
@@ -374,6 +410,19 @@
               <span id="gemini-key-status" class="key-status-badge">&#x2713; Valid</span>
             </div>
           </div>
+
+          <div class="settings-field">
+            <label for="select-gemini-tier">Gemini Model Preference</label>
+            <select id="select-gemini-tier" class="custom-select">
+              <option value="flash" selected>Flash Models (Fast &amp; Cost-Efficient)</option>
+              <option value="pro">Pro Models (Deep Reasoning)</option>
+            </select>
+          </div>
+
+          <div class="api-key-row" style="margin-top: 4px;">
+            <button id="btn-test-gemini-audio" type="button" class="secondary-btn full-width">&#x1F9EA; Test Audio Modality</button>
+          </div>
+          <div id="gemini-diagnostic-feedback" class="settings-feedback"></div>
 
           <!-- Secondary API keys: Groq & OpenAI in a clean collapsible row -->
           <details class="secondary-keys-details">
@@ -410,10 +459,45 @@
           </details>
         </div>
 
-        <!-- 2: Caption Preferences -->
+        <!-- 2: Audio Export Preset (.epr) -->
         <div class="card step-card">
           <div class="step-header">
             <div class="step-number">2</div>
+            <div class="step-meta">
+              <h3>Audio Export Preset (.epr)</h3>
+              <p>Adobe Media Encoder preset for sequence audio extraction.</p>
+            </div>
+          </div>
+
+          <div class="settings-field">
+            <div class="settings-label-row">
+              <label for="audio-preset-select">Configured Export Preset</label>
+              <span id="preset-status-badge" class="key-status-badge">&#x2713; Ready</span>
+            </div>
+            <select id="audio-preset-select" class="custom-select">
+              <option value="">(Click Find Presets to detect installed presets)</option>
+            </select>
+            <div class="api-key-row" style="margin-top: 8px;">
+              <input type="text" id="input-audio-preset-path" class="text-input" placeholder="Full path to .epr file" />
+              <button id="btn-browse-preset" type="button" class="btn-test-key">&#x1F4C1; Choose</button>
+            </div>
+          </div>
+
+          <div class="media-quick-actions">
+            <button id="btn-find-presets" class="secondary-btn" type="button">&#x1F50D; Find Presets</button>
+            <button id="btn-test-preset" class="secondary-btn" type="button">&#x26A1; Test Export</button>
+          </div>
+
+          <p class="preview-note" style="margin-top: 6px;">
+            &#x1F4A1; <strong>How to create in Premiere:</strong> File &gt; Export &gt; Media &gt; Format: <em>Waveform Audio (WAV)</em> &gt; Save Preset (.epr).
+          </p>
+          <div id="preset-feedback" class="settings-feedback"></div>
+        </div>
+
+        <!-- 3: Caption Preferences -->
+        <div class="card step-card">
+          <div class="step-header">
+            <div class="step-number">3</div>
             <div class="step-meta">
               <h3>Caption Preferences</h3>
               <p>Set language and caption length preferences.</p>
@@ -440,10 +524,10 @@
           </div>
         </div>
 
-        <!-- 3: Output Format -->
+        <!-- 4: Output Format -->
         <div class="card step-card">
           <div class="step-header">
-            <div class="step-number">3</div>
+            <div class="step-number">4</div>
             <div class="step-meta">
               <h3>Output Format</h3>
               <p>Choose how Sinhala text should be output.</p>
@@ -462,10 +546,10 @@
           </div>
         </div>
 
-        <!-- 4: App Settings -->
+        <!-- 5: App Settings -->
         <div class="card step-card">
           <div class="step-header">
-            <div class="step-number">4</div>
+            <div class="step-number">5</div>
             <div class="step-meta">
               <h3>App Settings</h3>
               <p>General app behavior and updates.</p>

@@ -32,6 +32,15 @@ function premiereUxpBundle(): Plugin {
           resolve(binDirectory, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
         );
       }
+
+      // Copy JSX host scripts
+      const jsxSource = resolve("cep", "AutoCap", "jsx");
+      if (existsSync(jsxSource)) {
+        const jsxDest = resolve(outputDirectory, "jsx");
+        mkdirSync(jsxDest, { recursive: true });
+        cpSync(jsxSource, jsxDest, { recursive: true, force: true });
+      }
+
       const cepOutputDirectory = resolve("cep", "AutoCap", "dist");
       rmSync(cepOutputDirectory, { recursive: true, force: true });
       cpSync(outputDirectory, cepOutputDirectory, { recursive: true, force: true });

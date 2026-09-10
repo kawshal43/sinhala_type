@@ -486,8 +486,30 @@ $._AutoCap_Host = (function () {
     return { updatedCount: updated };
   }
 
-  function setTextPropertyValue(prop, text) {
+  function appendDebugLog(msg) {
+    try {
+      if (typeof Folder !== "undefined" && Folder.temp) {
+        var logFile = new File(Folder.temp.fsName + "/autocap_premiere_debug.log");
+        logFile.open("a");
+        logFile.writeln("[" + (new Date()).toTimeString() + "] " + msg);
+        logFile.close();
+      }
+    } catch (e) {}
+  }
+
+  function getCollectionCount(col) {
+    if (!col) return 0;
+    if (typeof col.numProperties === "number") return col.numProperties;
+    if (typeof col.numItems === "number") return col.numItems;
+    if (typeof col.length === "number") return col.length;
+    return 0;
+  }
+
+  function setTextPropertyValue(prop, text, style) {
     if (!prop) return false;
+
+    var propDisplayName = prop.displayName || prop.name || "unnamed";
+    appendDebugLog("setTextPropertyValue called for: " + propDisplayName);
 
     // 1. In Premiere Pro MOGRTs, text properties often store a JSON object with textEditValue
     var currentVal = null;
@@ -495,7 +517,12 @@ $._AutoCap_Host = (function () {
       if (prop.getValue) {
         currentVal = prop.getValue();
       }
-    } catch (gvErr) {}
+    } catch (gvErr) {
+      appendDebugLog("getValue error: " + (gvErr.message || gvErr));
+    }
+
+    var valSnippet = typeof currentVal === "string" ? currentVal.slice(0, 80) : String(currentVal);
+    appendDebugLog("currentVal type: " + (typeof currentVal) + ", snippet: " + valSnippet);
 
     if (typeof currentVal === "string" && currentVal.length > 0) {
       if (currentVal.charAt(0) === "{" || currentVal.indexOf("textEditValue") !== -1) {
@@ -503,40 +530,94 @@ $._AutoCap_Host = (function () {
           var parsed = JSON.parse(currentVal);
           if (parsed && typeof parsed === "object") {
             parsed.textEditValue = String(text);
+            // CRITICAL: Premiere Pro requires fontTextRunLength to match string character length
+            parsed.fontTextRunLength = [String(text).length];
+            if (style && style.fontFamily && typeof parsed.fontEditValue !== "undefined") {
+              parsed.fontEditValue = style.fontFamily;
+            }
+            if (style && style.fontSize && typeof parsed.fontSizeEditValue !== "undefined") {
+              parsed.fontSizeEditValue = Number(style.fontSize);
+            }
             var updatedJson = JSON.stringify(parsed);
+            appendDebugLog("Setting JSON text: " + updatedJson.slice(0, 100));
             try {
-              prop.setValue(updatedJson, 1);
+              prop.setValue(updatedJson, true);
+              appendDebugLog("JSON setValue(true) succeeded");
               return true;
             } catch (sj1Err) {
               try {
-                prop.setValue(updatedJson);
+                prop.setValue(updatedJson, 1);
+                appendDebugLog("JSON setValue(1) succeeded");
                 return true;
-              } catch (sj2Err) {}
+              } catch (sj2Err) {
+                try {
+                  prop.setValue(updatedJson);
+                  appendDebugLog("JSON setValue() succeeded");
+                  return true;
+                } catch (sj3Err) {
+                  appendDebugLog("JSON setValue failed: " + (sj3Err.message || sj3Err));
+                }
+              }
             }
           }
-        } catch (jsonErr) {}
+        } catch (jsonErr) {
+          appendDebugLog("JSON.parse error: " + (jsonErr.message || jsonErr));
+        }
       }
     }
 
-    // 2. Direct setValue with updateUI = 1
-    try {
-      prop.setValue(String(text), 1);
-      return true;
-    } catch (sv1Err) {}
+    // 2. Direct string value if the property is a plain string property (NOT binary / ArbVideo)
+    if (typeof currentVal === "string" && currentVal.indexOf("\u0000") === -1 && currentVal.indexOf("BinaryHash") === -1) {
+      try {
+        prop.setValue(String(text), true);
+        appendDebugLog("Direct setValue(true) succeeded");
+        return true;
+      } catch (sv1Err) {
+        try {
+          prop.setValue(String(text), 1);
+          appendDebugLog("Direct setValue(1) succeeded");
+          return true;
+        } catch (sv2Err) {
+          try {
+            prop.setValue(String(text));
+            appendDebugLog("Direct setValue() succeeded");
+            return true;
+          } catch (sv3Err) {
+            appendDebugLog("Direct setValue failed: " + (sv3Err.message || sv3Err));
+          }
+        }
+      }
+    }
 
-    // 3. Direct setValue with no second argument
+    // 3. Try wrapped JSON object if currentVal was empty or null
     try {
-      prop.setValue(String(text));
+      var wrapper = JSON.stringify({
+        textEditValue: String(text),
+        fontTextRunLength: [String(text).length]
+      });
+      prop.setValue(wrapper, true);
+      appendDebugLog("Wrapper setValue(true) succeeded");
       return true;
-    } catch (sv2Err) {}
+    } catch (sv4Err) {
+      try {
+        prop.setValue(wrapper, 1);
+        appendDebugLog("Wrapper setValue(1) succeeded");
+        return true;
+      } catch (sv5Err) {
+        appendDebugLog("Wrapper setValue failed: " + (sv5Err.message || sv5Err));
+      }
+    }
 
-    // 4. Try wrapped JSON object
-    try {
-      var wrapper = JSON.stringify({ textEditValue: String(text) });
-      prop.setValue(wrapper, 1);
-      return true;
-    } catch (sv3Err) {}
+    // 4. Fallback direct string (skip internal ArbVideoComponentParam to avoid corrupting text)
+    if (propDisplayName.toLowerCase() !== "source text") {
+      try {
+        prop.setValue(String(text), true);
+        appendDebugLog("Fallback setValue(true) succeeded for " + propDisplayName);
+        return true;
+      } catch (lrErr) {}
+    }
 
+    appendDebugLog("setTextPropertyValue failed for " + propDisplayName);
     return false;
   }
 
@@ -544,27 +625,39 @@ $._AutoCap_Host = (function () {
     var collections = [];
     if (!trackItem) return collections;
 
-    // 1. Try getMGTComponent() (After Effects MOGRTs)
+    // 1. Try getMGTComponent() (Motion Graphics Templates)
     try {
       if (trackItem.getMGTComponent) {
         var mgt = trackItem.getMGTComponent();
         if (mgt && mgt.properties) {
-          collections.push(mgt.properties);
+          var mgtCount = getCollectionCount(mgt.properties);
+          appendDebugLog("getMGTComponent found: properties count = " + mgtCount);
+          if (mgtCount > 0) {
+            // Prioritize MGT component properties directly
+            collections.push(mgt.properties);
+            return collections;
+          }
         }
       }
-    } catch (mgtErr) {}
+    } catch (mgtErr) {
+      appendDebugLog("getMGTComponent error: " + (mgtErr.message || mgtErr));
+    }
 
-    // 2. Try trackItem.components (Premiere Pro Essential Graphics & native clips)
+    // 2. Fallback: trackItem.components (only if getMGTComponent has no properties)
     try {
       if (trackItem.components) {
-        for (var i = 0; i < trackItem.components.numItems; i++) {
+        var numComps = trackItem.components.numItems || 0;
+        appendDebugLog("Inspecting trackItem.components: numItems = " + numComps);
+        for (var i = 0; i < numComps; i++) {
           var comp = trackItem.components[i];
           if (comp && comp.properties) {
             collections.push(comp.properties);
           }
         }
       }
-    } catch (compErr) {}
+    } catch (compErr) {
+      appendDebugLog("components error: " + (compErr.message || compErr));
+    }
 
     return collections;
   }
@@ -576,7 +669,12 @@ $._AutoCap_Host = (function () {
     var propCollections = getCandidatePropertyCollections(trackItem);
 
     var textAliases = [
-      "text", "source text", "caption", "caption text", "title", "textlayer",
+      "Caption Text", "Caption text", "caption text",
+      "TextLayer", "Text Layer", "textlayer", "text layer",
+      "Source Text", "Source text", "source text",
+      "Caption", "caption",
+      "Text", "text",
+      "Title", "title",
       "textebene", "capa de texto", "calque de texte"
     ];
 
@@ -590,9 +688,12 @@ $._AutoCap_Host = (function () {
         for (var a = 0; a < textAliases.length; a++) {
           try {
             var directProp = col.getParamForDisplayName(textAliases[a]);
-            if (directProp && setTextPropertyValue(directProp, text)) {
-              textApplied = true;
-              break;
+            if (directProp) {
+              appendDebugLog("Pass 1 matched alias: " + textAliases[a]);
+              if (setTextPropertyValue(directProp, text, style)) {
+                textApplied = true;
+                break;
+              }
             }
           } catch (dpErr) {}
         }
@@ -603,15 +704,18 @@ $._AutoCap_Host = (function () {
     var allProps = [];
     for (var j = 0; j < propCollections.length; j++) {
       var collection = propCollections[j];
-      var count = collection.numItems || 0;
+      var count = getCollectionCount(collection);
+      appendDebugLog("Pass 2: collection " + j + " count = " + count);
       for (var p = 0; p < count; p++) {
         var prop = collection[p];
         if (!prop) continue;
         allProps.push(prop);
         var propName = prop.displayName || prop.name || "";
         if (propName) debugProperties.push(propName);
+        appendDebugLog("Pass 2: property[" + p + "] = " + propName);
         if (!textApplied && nameMatches(propName, textAliases)) {
-          if (setTextPropertyValue(prop, text)) {
+          appendDebugLog("Pass 2 matched: " + propName);
+          if (setTextPropertyValue(prop, text, style)) {
             textApplied = true;
           }
         }
@@ -620,13 +724,15 @@ $._AutoCap_Host = (function () {
 
     // Pass 3: Check if any property's getValue() contains textEditValue
     if (!textApplied) {
+      appendDebugLog("Pass 3: checking " + allProps.length + " properties for textEditValue");
       for (var k = 0; k < allProps.length; k++) {
         var candidate = allProps[k];
         try {
           if (candidate.getValue) {
             var val = candidate.getValue();
             if (typeof val === "string" && (val.indexOf("textEditValue") !== -1 || val.indexOf("Captions and Subtitles") !== -1)) {
-              if (setTextPropertyValue(candidate, text)) {
+              appendDebugLog("Pass 3 matched textEditValue in property: " + (candidate.displayName || candidate.name));
+              if (setTextPropertyValue(candidate, text, style)) {
                 textApplied = true;
                 break;
               }
@@ -638,11 +744,12 @@ $._AutoCap_Host = (function () {
 
     // Pass 4: Fallback for single/minimal-control MOGRTs (the non-shape, non-motion property)
     if (!textApplied) {
+      appendDebugLog("Pass 4: minimal-control fallback");
       for (var m = 0; m < allProps.length; m++) {
         var fallbackProp = allProps[m];
         var pName = normalizeControlName(fallbackProp.displayName || fallbackProp.name || "");
         if (pName !== "layername" && pName !== "shape" && pName !== "opacity" && pName !== "position" && pName !== "scale" && pName !== "rotation") {
-          if (setTextPropertyValue(fallbackProp, text)) {
+          if (setTextPropertyValue(fallbackProp, text, style)) {
             textApplied = true;
             break;
           }
@@ -702,11 +809,15 @@ $._AutoCap_Host = (function () {
   }
 
   function insertMogrtItem(sequence, templatePath, trackIndex, startSec, durationSec, text, style) {
-    // Premiere's importMGT time parameter is a string containing ticks.
+    appendDebugLog("insertMogrtItem: path=" + templatePath + ", track=" + trackIndex + ", start=" + startSec + ", dur=" + durationSec + ", text=" + text.slice(0, 30));
     var ticksPerSecond = 254016000000;
     var insertTicks = String(Math.round(Math.max(0, startSec) * ticksPerSecond));
     var trackItem = sequence.importMGT ? sequence.importMGT(templatePath, insertTicks, trackIndex, 0) : null;
-    if (!trackItem) throw new Error("Premiere importMGT did not create a track item.");
+    if (!trackItem) {
+      appendDebugLog("ERROR: importMGT returned null or undefined!");
+      throw new Error("Premiere importMGT did not create a track item.");
+    }
+    appendDebugLog("importMGT created trackItem: " + trackItem.name);
     var properties = applyMogrtControls(trackItem, text, style || {});
     setTrackItemDuration(trackItem, durationSec);
     return { trackItem: trackItem, properties: properties };
@@ -815,6 +926,12 @@ $._AutoCap_Host = (function () {
         }
       }
 
+      try {
+        if (sequence.getPlayerPosition && sequence.setPlayerPosition) {
+          sequence.setPlayerPosition(sequence.getPlayerPosition());
+        }
+      } catch (rfErr) {}
+
       return makeSuccess({
         success: true,
         mode: mode,
@@ -826,6 +943,114 @@ $._AutoCap_Host = (function () {
       });
     } catch (err) {
       return makeError("MOGRT_BATCH_FAILED", err.message || err.toString());
+    }
+  }
+
+  /** Converts sequence caption tracks to native editable Graphic clips via Premiere command. */
+  function upgradeCaptionsToGraphics(requestJson) {
+    try {
+      if (!app.project) return makeError("NO_PROJECT", "No active Premiere Pro project opened.");
+      var request = typeof requestJson === "string" ? JSON.parse(requestJson) : (requestJson || {});
+      var sequence = resolveSequence(request.sequenceId);
+      appendDebugLog("upgradeCaptionsToGraphics called. Sequence: " + (sequence ? sequence.name : "none"));
+
+      // 1. Force focus to the active timeline sequence so menu commands target the timeline
+      if (sequence && app.project) {
+        try {
+          app.project.activeSequence = sequence;
+          appendDebugLog("Re-asserted app.project.activeSequence to set timeline focus.");
+        } catch (actErr) {
+          appendDebugLog("Focus activeSequence error: " + (actErr.message || actErr));
+        }
+      }
+
+      // 2. In Premiere Pro, "Upgrade Caption to Graphic" acts on selected subtitle clips.
+      // If nothing is selected, try triggering "Select All" on the timeline.
+      if (app.findMenuCommandId && app.executeCommand) {
+        try {
+          var selectAllId = app.findMenuCommandId("Select All");
+          appendDebugLog("findMenuCommandId('Select All') returned: " + selectAllId);
+          if (selectAllId && selectAllId !== 0) {
+            app.executeCommand(selectAllId);
+            appendDebugLog("Executed Select All (" + selectAllId + ") on timeline.");
+          }
+        } catch (saErr) {
+          appendDebugLog("Select All error: " + (saErr.message || saErr));
+        }
+      }
+
+      var cmdAliases = [
+        "Upgrade Caption to Graphic",
+        "Upgrade caption to graphic",
+        "Upgrade Captions to Graphics",
+        "Upgrade captions to graphics",
+        "Upgrade Captions to Titles",
+        "Graphics and Titles: Upgrade Caption to Graphic",
+        "Untertitel in Grafik konvertieren",
+        "Convertir subtítulo en gráfico",
+        "Convertir les sous-titres en graphiques"
+      ];
+
+      var candidateIds = [];
+      var matchedName = "";
+      if (app.findMenuCommandId) {
+        for (var i = 0; i < cmdAliases.length; i++) {
+          try {
+            var found = app.findMenuCommandId(cmdAliases[i]);
+            appendDebugLog("findMenuCommandId('" + cmdAliases[i] + "') -> " + found);
+            if (found && found !== 0) {
+              candidateIds.push(found);
+              matchedName = cmdAliases[i];
+              break;
+            }
+          } catch (fErr) {}
+        }
+      }
+
+      // Add known numeric command IDs across Premiere Pro releases:
+      // 12332 (canonical Upgrade Caption to Graphic command ID in Premiere Pro)
+      // 20150 (Premiere Pro 23.1+ unified command table ID)
+      // 12534 (legacy fallback ID)
+      // 2368 (alternate command ID)
+      var fallbackIds = [12332, 20150, 12534, 2368];
+      for (var f = 0; f < fallbackIds.length; f++) {
+        var exists = false;
+        for (var c = 0; c < candidateIds.length; c++) {
+          if (candidateIds[c] === fallbackIds[f]) exists = true;
+        }
+        if (!exists) candidateIds.push(fallbackIds[f]);
+      }
+
+      appendDebugLog("Candidate IDs to try: " + candidateIds.join(", "));
+
+      if (app.executeCommand) {
+        var lastErr = "";
+        for (var k = 0; k < candidateIds.length; k++) {
+          var targetCmdId = candidateIds[k];
+          try {
+            appendDebugLog("Executing command ID: " + targetCmdId + "...");
+            app.executeCommand(targetCmdId);
+            appendDebugLog("Command ID " + targetCmdId + " succeeded!");
+            return makeSuccess({
+              status: "upgraded",
+              commandId: targetCmdId,
+              commandName: matchedName || ("Upgrade Caption to Graphic (" + targetCmdId + ")"),
+              message: "Converted captions to native editable graphic clips on timeline."
+            });
+          } catch (exErr) {
+            lastErr = exErr.message || String(exErr);
+            appendDebugLog("Command ID " + targetCmdId + " failed: " + lastErr);
+          }
+        }
+      }
+
+      return makeError(
+        "SELECTION_REQUIRED",
+        "Please select your subtitle clips on the timeline first, or use Premiere's menu: Graphics and Titles > Upgrade Caption to Graphic."
+      );
+    } catch (err) {
+      appendDebugLog("upgradeCaptionsToGraphics unhandled: " + (err.message || err.toString()));
+      return makeError("UPGRADE_FAILED", err.message || err.toString());
     }
   }
 
@@ -880,6 +1105,7 @@ $._AutoCap_Host = (function () {
     inspectActiveSequence: inspectActiveSequence,
     exportTimelineAudio: exportTimelineAudio,
     importCaptionTrack: importCaptionTrack,
+    upgradeCaptionsToGraphics: upgradeCaptionsToGraphics,
     insertMOGRTGraphic: insertMOGRTGraphic,
     insertCaptionGraphics: insertCaptionGraphics,
     insertCaptionGraphicsBatch: insertCaptionGraphicsBatch

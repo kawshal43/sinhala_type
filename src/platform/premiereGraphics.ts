@@ -1,4 +1,4 @@
-import { evalExtendScript, isCep } from "./premiereBridge";
+import { ensureHostScriptLoaded, evalExtendScript, isCep } from "./premiereBridge";
 import type {
   CaptionGraphicsRequest,
   ChunkedGraphicsOptions,
@@ -35,6 +35,7 @@ export class PremiereGraphicsClient {
     method: "insertMOGRTGraphic" | "insertCaptionGraphics" | "insertCaptionGraphicsBatch",
     payload: object
   ): Promise<T> {
+    await ensureHostScriptLoaded();
     const script = `$._AutoCap_Host.${method}(${JSON.stringify(JSON.stringify(payload))});`;
     const rawResult = await evalExtendScript(script);
     let parsed: HostRpcResponse<T>;

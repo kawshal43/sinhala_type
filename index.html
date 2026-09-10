@@ -241,33 +241,14 @@
                 </label>
                 <label class="output-format-radio-label">
                   <input type="radio" name="caption-output-format" id="output-mode-graphics" value="graphics" />
-                  <span class="radio-pill">&#x2728; Editable Graphics (Styled Motion Clips)</span>
+                  <span class="radio-pill">&#x2728; Editable Graphics (Text Layers)</span>
                 </label>
               </div>
             </div>
 
             <!-- Editable Graphics Drawer (shown when Editable Graphics is selected) -->
             <div id="caption-graphics-drawer" class="caption-graphics-drawer" hidden>
-              <div class="graphic-style-grid">
-                <div class="settings-field">
-                  <label for="caption-graphic-track">Target Video Track</label>
-                  <select id="caption-graphic-track" class="custom-select">
-                    <option value="0">Video 1 (V1)</option>
-                    <option value="1">Video 2 (V2)</option>
-                    <option value="2" selected>Video 3 (V3)</option>
-                    <option value="3">Video 4 (V4)</option>
-                  </select>
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-mode">Insertion Mode</label>
-                  <select id="caption-graphic-mode" class="custom-select">
-                    <option value="add" selected>Add as New</option>
-                    <option value="replace">Replace Existing AutoCap Graphics</option>
-                    <option value="timing-only">Update Timing Only (Preserve Edits)</option>
-                  </select>
-                </div>
-              </div>
-              <p class="graphic-edit-note"><strong>Fully editable in Premiere:</strong> After insertion, select any AutoCap graphic and use Premiere's Properties panel to change its Sinhala/English text, font, size, color, position, stroke, shadow, animation, or other effects.</p>
+              <p class="graphic-edit-note"><strong>Native Premiere Text Layers:</strong> AutoCap places your subtitles and converts them to standard Premiere Graphic Text clips on your video track. 100% editable with the Type Tool (<code>T</code>) on the Program Monitor and in the Essential Graphics / Properties panel.</p>
 
               <!-- Insertion Progress Bar & Status -->
               <div id="graphic-insertion-progress" class="graphic-insertion-progress" hidden>
@@ -285,6 +266,9 @@
             <div class="export-actions-grid">
               <button id="btn-import-premiere" class="primary-btn premiere-action" type="button">
                 <span id="premiere-btn-icon">&#x1F3AC;</span> <span id="premiere-btn-text">Import to Premiere</span>
+              </button>
+              <button id="btn-upgrade-graphics" class="secondary-btn" type="button" title="Convert subtitle track to native Premiere graphic clips with editable text layers">
+                &#x26A1; Upgrade to Graphics
               </button>
               <button id="btn-export-srt" class="secondary-btn" type="button">
                 Export .SRT
@@ -414,37 +398,8 @@
               &#x26A0;&#xFE0F; <strong>Mixed English+Sinhala:</strong> Legacy fonts (Wije/ISI) cannot display English characters. For mixed text, <strong>Unicode</strong> is recommended.
             </div>
           </section>
-          <div class="typer-actions-row form-grid-2">
-            <button id="copy" class="primary-btn copy-action" type="button">Copy Unicode</button>
-            <button id="btn-toggle-mogrt" class="secondary-btn mogrt-toggle-btn" type="button" title="Insert as Motion Graphics Template in Premiere">
-              &#x1F3A8; Insert Graphic (MOGRT)
-            </button>
-          </div>
-
-          <div id="mogrt-config-panel" class="mogrt-config-panel" hidden>
-            <div class="form-grid-2">
-              <div class="settings-field">
-                <label for="mogrt-track-select">Target Video Track</label>
-                <select id="mogrt-track-select" class="custom-select">
-                  <option value="0">Video 1 (V1)</option>
-                  <option value="1">Video 2 (V2)</option>
-                  <option value="2" selected>Video 3 (V3)</option>
-                  <option value="3">Video 4 (V4)</option>
-                </select>
-              </div>
-              <div class="settings-field">
-                <label for="mogrt-duration-input">Duration (sec)</label>
-                <input type="number" id="mogrt-duration-input" class="text-input" min="0.5" max="60" value="4.0" step="0.5" />
-              </div>
-            </div>
-            <div class="settings-field">
-              <label for="mogrt-template-input">Motion Graphic Template (.mogrt)</label>
-              <div class="api-key-row">
-                <input type="text" id="mogrt-template-input" class="text-input" placeholder="Path to verified .mogrt file" />
-                <button id="btn-browse-mogrt" type="button" class="btn-test-key">&#x1F4C1; Browse</button>
-              </div>
-            </div>
-            <button id="btn-execute-insert-mogrt" type="button" class="primary-btn full-width">&#x2728; Place Graphic on Playhead</button>
+          <div class="typer-actions-row">
+            <button id="copy" class="primary-btn copy-action full-width" type="button">Copy Unicode</button>
           </div>
         </div>
       </section>
@@ -659,30 +614,6 @@
             </div>
           </div>
         </div>
-        <!-- 6: Advanced / Developer Settings -->
-        <details class="card step-card advanced-settings-details">
-          <summary class="advanced-settings-summary">
-            <div class="step-header">
-              <div class="step-number">&#x2699;</div>
-              <div class="step-meta">
-                <h3>Advanced / Developer Settings</h3>
-                <p>Custom graphic template (.mogrt) override &amp; developer controls.</p>
-              </div>
-            </div>
-          </summary>
-          <div class="advanced-settings-content" style="margin-top: 14px;">
-            <div class="settings-field">
-              <label for="input-custom-mogrt-override">Custom Graphic Template Override (.mogrt)</label>
-              <div class="api-key-row">
-                <input id="input-custom-mogrt-override" type="text" class="text-input" placeholder="(Bundled AutoCapCaption.mogrt is used by default)" />
-                <button id="btn-browse-advanced-mogrt" type="button" class="btn-test-key">&#x1F4C1; Browse</button>
-                <button id="btn-reset-advanced-mogrt" type="button" class="btn-test-key" title="Reset to default bundled template">&#x27F3; Reset</button>
-                <input id="advanced-mogrt-file" type="file" accept=".mogrt" hidden />
-              </div>
-              <p class="preview-note">&#x1F4A1; AutoCap uses its bundled <code>AutoCapCaption.mogrt</code> by default with zero configuration. Only specify a path here if you have built a custom After Effects MOGRT with exposed Text controls.</p>
-            </div>
-          </div>
-        </details>
 
         <!-- Bottom Actions -->
         <div class="settings-actions-footer">

@@ -148,6 +148,41 @@ export class PremiereCaptionsClient {
       message: parsed.data.message
     };
   }
+
+  /**
+   * Converts sequence captions into native, editable Graphic clips on a video track
+   * using Premiere Pro's built-in "Upgrade Caption to Graphic" command.
+   */
+  public async upgradeCaptionsToGraphics(sequenceId?: string): Promise<{ success: boolean; message: string }> {
+    if (!isCep()) {
+      return {
+        success: true,
+        message: "Browser demo: simulated upgrading captions to graphic clips."
+      };
+    }
+    const hostPayload = { sequenceId: sequenceId || "" };
+    const script = `$._AutoCap_Host.upgradeCaptionsToGraphics(${JSON.stringify(JSON.stringify(hostPayload))});`;
+    const rawResult = await evalExtendScript(script);
+    try {
+      const parsed: HostRpcResponse<any> = JSON.parse(rawResult);
+      if (!parsed.success) {
+        return {
+          success: false,
+          message: parsed.error?.message || "Could not execute Upgrade Caption to Graphic."
+        };
+      }
+      return {
+        success: true,
+        message: parsed.data?.message || "Converted captions to native editable graphic clips on timeline."
+      };
+    } catch {
+      return {
+        success: false,
+        message: rawResult || "No response from Premiere."
+      };
+    }
+  }
 }
 
 export const premiereCaptionsClient = new PremiereCaptionsClient();
+

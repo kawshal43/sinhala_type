@@ -55,9 +55,9 @@
               </button>
             </div>
             <div class="source-kind-segmented" role="group" aria-label="Audio Source Scope">
-              <button id="src-kind-seq" class="source-kind-btn active" type="button" data-kind="sequence">Entire Sequence</button>
+              <button id="src-kind-seq" class="source-kind-btn" type="button" data-kind="sequence">Entire Sequence</button>
               <button id="src-kind-track" class="source-kind-btn" type="button" data-kind="track">Audio Track</button>
-              <button id="src-kind-range" class="source-kind-btn" type="button" data-kind="range">Selected Range</button>
+              <button id="src-kind-range" class="source-kind-btn active" type="button" data-kind="range">Selected Range</button>
             </div>
             <div id="track-select-wrapper" class="track-controls-row" hidden>
               <select id="select-audio-track" class="custom-select" aria-label="Select Premiere Pro Audio Track">
@@ -73,6 +73,9 @@
             <div class="track-action-buttons-row">
               <button id="btn-load-track" class="secondary-btn track-load-btn" type="button">
                 Load Selected Audio
+              </button>
+              <button id="btn-generate-selection" class="primary-btn track-load-btn" type="button" title="Load the selected Premiere clips and start transcription">
+                Generate From Selection
               </button>
               <button id="btn-remove-track" class="secondary-btn track-remove-btn" type="button" title="Unload / remove current audio" hidden>
                 &#x2715; Remove Audio
@@ -557,6 +560,13 @@
           </div>
 
           <div class="app-toggles-list">
+            <div class="toggle-row">
+              <span>Automatically add caption track after generation</span>
+              <label class="switch">
+                <input type="checkbox" id="pref-auto-import" />
+                <span class="slider"></span>
+              </label>
+            </div>
             <div class="toggle-row">
               <span>Auto open captions after import</span>
               <label class="switch">

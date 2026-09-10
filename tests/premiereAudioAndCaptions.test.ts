@@ -58,3 +58,4 @@ describe("premiereAudioAndCaptions in non-CEP (browser / node) mode", () => {
     expect(res.appliedText).toBe("ආයුබෝවන්");
   });
 });
+

@@ -10,7 +10,7 @@ import { isSinhalaText } from "../core/subtitles/captionConverter";
 import { createTimelineCaptionDocument } from "../core/subtitles/timelineContext";
 import { temporaryMedia } from "./temporaryMedia";
 import { transcribeAudioChunked } from "./chunkedTranscription";
-import { checkLocalWorkerHealth, transcribeWithLocalWorker, type LocalWorkerHealth } from "./localWorkerClient";
+import { canProcessTranscription, checkLocalWorkerHealth, transcribeWithLocalWorker, type LocalWorkerHealth } from "./localWorkerClient";
 
 export type JobStage =
   | "idle"
@@ -92,7 +92,7 @@ export class TranscriptionJobController {
     this.currentAbortController = abortController;
 
     const emitProgress = (stage: JobStage, percent: number, message: string) => {
-      if (this.currentJobId !== jobId) return; // Stale callback check
+      if (this.currentJobId !== jobId || (abortController.signal.aborted && stage !== "cancelled")) return; // Stale callback check
       this.currentStage = stage;
       callbacks.onProgress?.({ jobId, stage, percent, message });
     };
@@ -129,7 +129,7 @@ export class TranscriptionJobController {
       const completedCues: SubtitleCue[] = [];
 
       let transcribeResult;
-      if (useLocalWorker && preparedAudio.audioPath) {
+      if (useLocalWorker && settings.sttProvider === "gemini" && preparedAudio.audioPath) {
         transcribeResult = await transcribeWithLocalWorker({
           mediaPath: preparedAudio.audioPath,
           timelineStart: 0, // Keep cues relative to exported audio
@@ -142,7 +142,7 @@ export class TranscriptionJobController {
             emitProgress("transcribing", pct, p.message || "Streaming captions...");
           },
           onCue: (cue) => {
-            if (this.currentJobId !== jobId) return;
+            if (this.currentJobId !== jobId || abortController.signal.aborted) return;
             completedCues.push(cue);
             callbacks.onCue?.(cue, completedCues.length);
           }
@@ -171,7 +171,7 @@ export class TranscriptionJobController {
             emitProgress("transcribing", pct, p.message || "Generating captions...");
           },
           onCue: (cue) => {
-            if (this.currentJobId !== jobId) return;
+            if (this.currentJobId !== jobId || abortController.signal.aborted) return;
             completedCues.push(cue);
             callbacks.onCue?.(cue, completedCues.length);
           }
@@ -194,7 +194,7 @@ export class TranscriptionJobController {
       );
 
       this.activeDocument = document;
-      temporaryMedia.releasePreviousDocuments(jobId);
+      temporaryMedia.releasePreviousDocuments(preparedAudio.jobId);
 
       emitProgress("ready", 100, `Generated ${document.cues.length} captions successfully.`);
       return document;
@@ -223,9 +223,7 @@ export class TranscriptionJobController {
     if (this.isBusy() && this.currentAbortController) {
       this.currentStage = "cancelling";
       this.currentAbortController.abort(new Error("Job cancelled by user."));
-      if (this.currentJobId) {
-        temporaryMedia.cleanupJobAudio(this.currentJobId);
-      }
+      // Export may still be writing; cleanup runs after it settles.
     }
   }
 
@@ -234,12 +232,9 @@ export class TranscriptionJobController {
    * A responding HTTP server alone must not make it eligible for transcription.
    */
   public canWorkerProcessRealJobs(health: LocalWorkerHealth | null): boolean {
-    if (!health) return false;
-    if (health.status !== "ok") return false;
-    if (!health.ffmpegAvailable) return false;
-    // Must be version 1.3+ with verified worker identity
-    return health.worker === "autocap-local-worker";
+    return canProcessTranscription(health);
   }
 }
 
 export const transcriptionJobController = new TranscriptionJobController();
+

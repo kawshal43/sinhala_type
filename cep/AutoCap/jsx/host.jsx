@@ -33,7 +33,7 @@ $._AutoCap_Host = (function () {
     if (!app.project) {
       throw new Error("No active Premiere Pro project opened.");
     }
-    if (sequenceId) {
+    if (sequenceId && sequenceId !== "active_sequence") {
       var seqCount = app.project.sequences ? app.project.sequences.numSequences : 0;
       for (var i = 0; i < seqCount; i++) {
         var s = app.project.sequences[i];
@@ -41,6 +41,9 @@ $._AutoCap_Host = (function () {
           return s;
         }
       }
+    }
+    if (sequenceId && sequenceId !== "active_sequence") {
+      throw new Error("Requested sequence no longer exists: " + sequenceId);
     }
     var activeSeq = app.project.activeSequence;
     if (!activeSeq && app.project.sequences && app.project.sequences.numSequences > 0) {
@@ -144,22 +147,22 @@ $._AutoCap_Host = (function () {
 
   function restoreSequenceState(sequence, snapshot) {
     if (!sequence || !snapshot) return;
-    try {
-      if (snapshot.audioTrackMutes && sequence.audioTracks) {
-        for (var i = 0; i < snapshot.audioTrackMutes.length && i < sequence.audioTracks.numTracks; i++) {
-          var shouldMute = snapshot.audioTrackMutes[i] ? 1 : 0;
-          sequence.audioTracks[i].setMute(shouldMute);
-        }
+    var failures = [];
+    function attempt(fn) { try { fn(); } catch (err) { failures.push(String(err)); } }
+    if (snapshot.audioTrackMutes && sequence.audioTracks) {
+      for (var i = 0; i < snapshot.audioTrackMutes.length && i < sequence.audioTracks.numTracks; i++) {
+        (function(index) { attempt(function() {
+          sequence.audioTracks[index].setMute(snapshot.audioTrackMutes[index] ? 1 : 0);
+        }); })(i);
       }
-      if (snapshot.inPointSec !== null && sequence.setInPoint) {
-        sequence.setInPoint(snapshot.inPointSec);
-      }
-      if (snapshot.outPointSec !== null && sequence.setOutPoint) {
-        sequence.setOutPoint(snapshot.outPointSec);
-      }
-    } catch (restoreErr) {
-      // Continue cleanup
     }
+    if (snapshot.inPointSec !== null && sequence.setInPoint) {
+      attempt(function() { sequence.setInPoint(snapshot.inPointSec); });
+    }
+    if (snapshot.outPointSec !== null && sequence.setOutPoint) {
+      attempt(function() { sequence.setOutPoint(snapshot.outPointSec); });
+    }
+    return failures;
   }
 
   /**
@@ -202,7 +205,7 @@ $._AutoCap_Host = (function () {
           sequence.audioTracks[t].setMute(t === request.trackIndex ? 0 : 1);
         }
       } else if (request.kind === "range") {
-        if (typeof request.startSec !== "number" || typeof request.endSec !== "number" || request.endSec <= request.startSec) {
+        if (!isFinite(request.startSec) || !isFinite(request.endSec) || request.startSec < 0 || request.endSec <= request.startSec) {
           return makeError("INVALID_RANGE", "Invalid range bounds: start=" + request.startSec + ", end=" + request.endSec);
         }
         sequence.setInPoint(request.startSec);
@@ -210,6 +213,7 @@ $._AutoCap_Host = (function () {
         workAreaType = 1;
 
         if (typeof request.trackIndex === "number" && sequence.audioTracks) {
+          if (request.trackIndex < 0 || request.trackIndex >= sequence.audioTracks.numTracks || request.trackIndex % 1 !== 0) return makeError("INVALID_TRACK", "Audio track index out of range.");
           for (var rt = 0; rt < sequence.audioTracks.numTracks; rt++) {
             sequence.audioTracks[rt].setMute(rt === request.trackIndex ? 0 : 1);
           }
@@ -255,7 +259,8 @@ $._AutoCap_Host = (function () {
     } finally {
       // 4. Guaranteed restoration of sequence state
       if (sequence && snapshot) {
-        restoreSequenceState(sequence, snapshot);
+        var failures = restoreSequenceState(sequence, snapshot);
+        if (failures.length) return makeError("STATE_RESTORE_FAILED", "Export finished but Premiere state could not be fully restored: " + failures.join("; "));
       }
     }
   }
@@ -279,6 +284,8 @@ $._AutoCap_Host = (function () {
       if (!srtFile.exists) {
         return makeError("FILE_NOT_FOUND", "Subtitle file not found on disk: " + srtPath);
       }
+
+      var sequence = resolveSequence(request.sequenceId);
 
       // 1. Import file into active project
       app.project.importFiles([srtPath], false, app.project.rootItem, false);
@@ -312,16 +319,16 @@ $._AutoCap_Host = (function () {
       }
 
       // 3. Attempt native caption track creation
-      var sequence = resolveSequence(request.sequenceId);
+
       var timelineStartSec = typeof request.timelineStartSec === "number" ? request.timelineStartSec : 0;
       var trackCreated = false;
 
       // Premiere Pro 15.0+ (2021+) unified caption API: sequence.createCaptionTrack
       if (sequence && sequence.createCaptionTrack) {
         try {
-          var timeObj = sequence.createTime ? sequence.createTime(timelineStartSec) : timelineStartSec;
+          var timeObj = 0; // SRT cues already include the timeline offset.
           var res = sequence.createCaptionTrack(targetItem, timeObj);
-          if (res !== false) {
+          if (res === true) {
             trackCreated = true;
           }
         } catch (capErr) {
@@ -437,3 +444,4 @@ $._AutoCap_Host = (function () {
     insertMOGRTGraphic: insertMOGRTGraphic
   };
 })();
+

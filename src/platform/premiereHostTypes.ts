@@ -96,3 +96,4 @@ export interface HostRpcResponse<T = any> {
     details?: any;
   };
 }
+

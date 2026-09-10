@@ -1,3 +1,4 @@
+import { geminiModelRegistry } from "./geminiModelRegistry";
 import type { SubtitleCue } from "../core/subtitles/srtParser";
 import { parseCaptionResponse } from "../core/subtitles/srtParser";
 import { isSinhalaText } from "../core/subtitles/captionConverter";
@@ -309,13 +310,7 @@ Do not include identifiers, markdown, notes, or timestamps inside the text field
     }
   };
 
-  const candidateModels = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro"
-  ];
+  const candidateModels = await geminiModelRegistry.getCandidateModels(apiKey, "flash", signal);
   let lastError = "";
 
   try {
@@ -426,6 +421,7 @@ Do not include identifiers, markdown, notes, or timestamps inside the text field
         // Fallback to detected language or language parameter
       }
 
+      geminiModelRegistry.rememberSuccessfulModel(apiKey, model);
       return { cues, detectedLanguage: detectedLang };
     } catch (err: any) {
       if (signal?.aborted) throw signal.reason || err;
@@ -646,16 +642,7 @@ Output ONLY the clean transcribed sentence text. Do NOT output timestamps, forma
       }
     };
 
-    const defaultCandidates = [
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-2.5-flash"
-    ];
-
-    const candidateModels = lastWorkingGeminiModel
-      ? [lastWorkingGeminiModel, ...defaultCandidates.filter((m) => m !== lastWorkingGeminiModel)]
-      : defaultCandidates;
+    const candidateModels = await geminiModelRegistry.getCandidateModels(settings.geminiApiKey, "flash", signal);
 
     for (const model of candidateModels) {
       if (signal?.aborted) throw signal.reason || new Error("Transcription cancelled.");
@@ -673,7 +660,7 @@ Output ONLY the clean transcribed sentence text. Do NOT output timestamps, forma
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const cleaned = cleanTranscribedText(text);
         if (cleaned) {
-          lastWorkingGeminiModel = model;
+          geminiModelRegistry.rememberSuccessfulModel(settings.geminiApiKey, model);
           return cleaned;
         }
       } catch (error) {

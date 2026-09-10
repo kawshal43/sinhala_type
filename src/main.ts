@@ -1,3 +1,4 @@
+import { checkLocalWorkerHealth, canProcessTranscription } from "./services/localWorkerClient";
 import "./styles.css";
 import { unicodeToDlManel } from "sinhala-unicode-coverter";
 import { PHONETIC_CATEGORIES, WIJESEKARA_ROWS, type PhoneticCategory } from "./core/keyboardLayouts";
@@ -36,16 +37,17 @@ import {
   VerificationController
 } from "./services/verificationEngine";
 import { repairTimestampOverlaps } from "./core/subtitles/timelineMerger";
+import { createTimelineCaptionDocument } from "./core/subtitles/timelineContext";
 import { retranscribeCue, type TranscribeResult } from "./services/sttService";
 import { transcribeAudioChunked } from "./services/chunkedTranscription";
-import { checkLocalWorkerHealth, transcribeWithLocalWorker } from "./services/localWorkerClient";
 import { AudioRecorder } from "./services/audioRecorder";
 import {
   clearAudioDecodeCache,
+  evalExtendScript,
+  loadMediaFileFromPath,
+  prepareMediaForTranscription,
   exportSubtitleFile,
   getSequenceAudioTracks,
-  importSubtitlesIntoPremiere,
-  prepareMediaForTranscription,
   sliceAudioBlob,
   type SequenceAudioTrackInfo,
   type SequenceClipInfo
@@ -55,7 +57,9 @@ import { audioPresetManager } from "./services/audioPresetManager";
 import { runGeminiAudioDiagnostic } from "./services/geminiDiagnostics";
 import { premiereAudioClient } from "./platform/premiereAudio";
 import { premiereGraphicsClient } from "./platform/premiereGraphics";
-import type { AudioSourceRequest } from "./platform/premiereHostTypes";
+import { premiereCaptionsClient } from "./platform/premiereCaptions";
+import { temporaryMedia } from "./services/temporaryMedia";
+import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest } from "./platform/premiereHostTypes";
 import {
   loadSettings,
   saveSettings,
@@ -72,6 +76,16 @@ const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>
 let appSettings: AppSettings = loadSettings();
 let currentAudioFile: File | Blob | null = null;
 let currentMediaPath: string | null = null;
+let preparedTimelineAudio: PreparedTimelineAudio | null = null;
+let timelineDocument: TimelineCaptionDocument | null = null;
+let loadedTimelineContext: Omit<TimelineCaptionDocument, "cues"> | null = null;
+let mediaRevision = 0;
+async function inspectTimeline(): Promise<HostSequenceSummary> {
+  const result = JSON.parse(await evalExtendScript("$._AutoCap_Host.inspectActiveSequence();") || "{}");
+  if (!result.success || !result.data) throw new Error(result.error?.message || "Open an active Premiere sequence.");
+  return result.data;
+}
+
 let currentCues: SubtitleCue[] = [];
 let subtitleEncoding: CaptionEncoding = "unicode";
 let detectedIsSinhala = false;
@@ -181,6 +195,7 @@ const selectAudioClip = $("#select-audio-clip") as HTMLSelectElement;
 const clipSelectorRow = $("#clip-selector-row");
 const btnRefreshTracks = $("#btn-refresh-tracks") as HTMLButtonElement;
 const btnLoadTrack = $("#btn-load-track") as HTMLButtonElement;
+const btnGenerateSelection = $("#btn-generate-selection") as HTMLButtonElement;
 const btnRemoveTrack = $("#btn-remove-track") as HTMLButtonElement;
 const btnClearAudio = $("#btn-clear-audio") as HTMLButtonElement;
 const trackLoadStatus = $("#track-load-status");
@@ -292,6 +307,7 @@ btnPauseTranscribe.addEventListener("click", () => {
 });
 
 btnStopTranscribe.addEventListener("click", () => {
+  transcriptionJobController.cancelActiveJob();
   if (!activeVerificationController) return;
   activeVerificationController.stop();
   setCaptionProgress(100, "Stopping process and preserving captions...");
@@ -299,6 +315,12 @@ btnStopTranscribe.addEventListener("click", () => {
 });
 
 function loadAudioFile(file: File | Blob, name = "Audio Recording", mediaPath?: string): void {
+  mediaRevision++;
+  activeVerificationController?.stop();
+  transcriptionJobController.cancelActiveJob();
+  preparedTimelineAudio = null;
+  timelineDocument = null;
+  loadedTimelineContext = null;
   currentAudioFile = file;
   currentMediaPath = mediaPath || (file as any).path || null;
   const objectUrl = URL.createObjectURL(file);
@@ -314,6 +336,12 @@ function loadAudioFile(file: File | Blob, name = "Audio Recording", mediaPath?: 
 }
 
 function unloadAudio(): void {
+  mediaRevision++;
+  activeVerificationController?.stop();
+  transcriptionJobController.cancelActiveJob();
+  preparedTimelineAudio = null;
+  timelineDocument = null;
+  loadedTimelineContext = null;
   currentAudioFile = null;
   currentMediaPath = null;
   audioPlayer.pause();
@@ -330,57 +358,9 @@ btnRemoveTrack.addEventListener("click", unloadAudio);
 btnClearAudio.addEventListener("click", unloadAudio);
 
 function updateClipSelector(): void {
-  const selectedTrackVal = selectAudioTrack.value;
+  // Export uses the whole track or the live selection span, including all cuts.
   selectAudioClip.innerHTML = "";
-
-  if (selectedTrackVal === "timeline_selection") {
-    if (timelineSelectedClips.length === 0) {
-      clipSelectorRow.hidden = true;
-      return;
-    }
-    clipSelectorRow.hidden = false;
-    const allOpt = document.createElement("option");
-    allOpt.value = "all";
-    allOpt.textContent = `All Selected Clips (Primary / Longest of ${timelineSelectedClips.length})`;
-    selectAudioClip.appendChild(allOpt);
-
-    timelineSelectedClips.forEach((clip, idx) => {
-      const opt = document.createElement("option");
-      opt.value = String(idx);
-      const dur = clip.duration ? ` · ${formatDisplayDuration(clip.duration)}` : "";
-      const nested = clip.nestedFrom ? ` [Nested in ${clip.nestedFrom}]` : "";
-      opt.textContent = `Clip #${idx + 1}: ${clip.name}${nested}${dur}`;
-      selectAudioClip.appendChild(opt);
-    });
-    return;
-  }
-
-  const trackIndex = parseInt(selectedTrackVal, 10);
-  if (isNaN(trackIndex)) {
-    clipSelectorRow.hidden = true;
-    return;
-  }
-
-  const track = sequenceTracks.find((t) => t.index === trackIndex);
-  if (!track || track.clips.length <= 1) {
-    clipSelectorRow.hidden = true;
-    return;
-  }
-
-  clipSelectorRow.hidden = false;
-  const allOpt = document.createElement("option");
-  allOpt.value = "all";
-  allOpt.textContent = `All Clips on Track (Longest / Primary of ${track.clips.length})`;
-  selectAudioClip.appendChild(allOpt);
-
-  track.clips.forEach((clip, idx) => {
-    const opt = document.createElement("option");
-    opt.value = String(idx);
-    const dur = clip.duration ? ` · ${formatDisplayDuration(clip.duration)}` : "";
-    const nested = clip.nestedFrom ? ` [Nested in ${clip.nestedFrom}]` : "";
-    opt.textContent = `Clip #${idx + 1}: ${clip.name}${nested}${dur}`;
-    selectAudioClip.appendChild(opt);
-  });
+  clipSelectorRow.hidden = true;
 }
 
 selectAudioTrack.addEventListener("change", updateClipSelector);
@@ -400,15 +380,7 @@ async function scanPremiereTracks(): Promise<void> {
     timelineSelectedClips = seqInfo.selectedClips || [];
     selectAudioTrack.innerHTML = "";
 
-    if (timelineSelectedClips.length > 0) {
-      const selOpt = document.createElement("option");
-      selOpt.value = "timeline_selection";
-      selOpt.textContent = `★ Timeline Selection (${timelineSelectedClips.length} audio clip${timelineSelectedClips.length > 1 ? "s" : ""})`;
-      selOpt.selected = true;
-      selectAudioTrack.appendChild(selOpt);
-    }
-
-    if (sequenceTracks.length === 0 && timelineSelectedClips.length === 0) {
+    if (sequenceTracks.length === 0) {
       selectAudioTrack.innerHTML = `<option value="">(No audio tracks in active sequence)</option>`;
       notify("No audio tracks found in sequence.");
       clipSelectorRow.hidden = true;
@@ -423,6 +395,7 @@ async function scanPremiereTracks(): Promise<void> {
       opt.textContent = `Track A${track.index + 1}: ${track.name} (${clipText}${mediaName})`;
       selectAudioTrack.appendChild(opt);
     });
+    if (sequenceTracks.length > 0) selectAudioTrack.value = String(sequenceTracks[0].index);
 
     updateClipSelector();
     notify(`Found ${sequenceTracks.length} audio tracks in "${seqInfo.sequenceName || "Sequence"}"`);
@@ -433,69 +406,91 @@ async function scanPremiereTracks(): Promise<void> {
 
 btnRefreshTracks.addEventListener("click", scanPremiereTracks);
 
-btnLoadTrack.addEventListener("click", async () => {
-  if (sequenceTracks.length === 0 && timelineSelectedClips.length === 0) {
-    await scanPremiereTracks();
+async function loadPremiereAudio(kind = activeSourceKind): Promise<boolean> {
+  if (transcriptionJobController.isBusy() || btnTranscribe.disabled) {
+    notify("Stop the current transcription before loading audio.", true);
+    return false;
   }
-
-  const selectedTrackVal = selectAudioTrack.value;
-  let targetClips: SequenceClipInfo[] = [];
-  let labelPrefix = "";
-
-  if (selectedTrackVal === "timeline_selection") {
-    targetClips = timelineSelectedClips;
-    labelPrefix = "Selection";
-  } else {
-    const trackIndex = parseInt(selectedTrackVal, 10);
-    if (isNaN(trackIndex)) {
-      return notify("Please select an audio track first.", true);
-    }
-    const track = sequenceTracks.find((t) => t.index === trackIndex);
-    if (!track || track.clips.length === 0) {
-      return notify(`Track A${trackIndex + 1} has no audio clips on the timeline.`, true);
-    }
-    targetClips = track.clips;
-    labelPrefix = `Track A${trackIndex + 1}`;
-  }
-
-  const validClips = targetClips.filter((c) => c.mediaPath && c.mediaPath.trim() !== "");
-  if (validClips.length === 0) {
-    return notify(`No media file path found for clips on ${labelPrefix}.`, true);
-  }
-
-  const clipChoice = selectAudioClip.value;
-  let clip: SequenceClipInfo;
-
-  if (clipChoice && clipChoice !== "all") {
-    const chosenIdx = parseInt(clipChoice, 10);
-    clip = (!isNaN(chosenIdx) && targetClips[chosenIdx]) ? targetClips[chosenIdx] : validClips[0];
-  } else {
-    const sorted = [...validClips].sort((a, b) => (b.duration || 0) - (a.duration || 0));
-    clip = sorted[0];
-  }
-
-  setTrackProgress(10, `Loading ${labelPrefix}: ${clip.name}...`);
   btnLoadTrack.disabled = true;
-
+  const revision = mediaRevision;
+  const jobId = `load_${Date.now()}`;
   try {
-    const prepared = await prepareMediaForTranscription(
-      clip.mediaPath,
-      clip.inPoint || 0,
-      clip.duration || 0,
-      (pct, msg) => setTrackProgress(pct, msg)
-    );
+    if (kind === "range") {
+      const liveInfo = await getSequenceAudioTracks();
+      if (liveInfo.error) throw new Error(liveInfo.error);
+      timelineSelectedClips = liveInfo.selectedClips || [];
+    }
+    const sequence = await inspectTimeline();
+    let request: AudioSourceRequest;
+    if (kind === "range") {
+      if (!sequence.selectedRange) throw new Error("Select clips on the timeline first.");
 
-    loadAudioFile(prepared.blob, prepared.filename, clip.mediaPath);
-    const cutsInfo = targetClips.length > 1 ? ` (${targetClips.length} cuts)` : "";
-    const nestedInfo = clip.nestedFrom ? ` [Nested: ${clip.nestedFrom}]` : "";
-    notify(`Loaded ${labelPrefix}: ${prepared.filename}${cutsInfo}${nestedInfo}`);
-    setTrackProgress(100, `${labelPrefix} loaded!`);
-    window.setTimeout(() => hideTrackProgress(), 1200);
-  } catch (err: any) {
-    hideTrackProgress();
-    notify(err.message || "Failed to load audio from Premiere track.", true);
+      const directClip = timelineSelectedClips.length === 1 ? timelineSelectedClips[0] : null;
+      if (directClip?.mediaPath && directClip.duration > 0) {
+        try {
+          setTrackProgress(15, "Extracting selected clip audio...");
+          const direct = await prepareMediaForTranscription(
+            directClip.mediaPath,
+            directClip.inPoint || 0,
+            directClip.duration,
+            (percent, message) => setTrackProgress(percent, message),
+            true
+          );
+          if (revision !== mediaRevision) return false;
+          loadAudioFile(direct.blob, direct.filename);
+          loadedTimelineContext = {
+            sequenceId: sequence.sequenceId,
+            timelineStartSec: directClip.startTime ?? sequence.selectedRange.startSec,
+            audioDurationSec: directClip.duration
+          };
+          notify("Selected clip audio loaded directly. No export preset was needed.");
+          return true;
+        } catch (directError) {
+          console.warn("Direct selected-clip extraction failed; using Premiere render:", directError);
+          setTrackProgress(20, "Rendering selected range through Premiere...");
+        }
+      }
+      request = { kind: "range", sequenceId: sequence.sequenceId, ...sequence.selectedRange };
+    } else if (kind === "sequence") {
+      request = { kind: "sequence", sequenceId: sequence.sequenceId };
+    } else {
+      const trackIndex = Number(selectAudioTrack.value);
+      if (!selectAudioTrack.value || !Number.isInteger(trackIndex)) throw new Error("Select an audio track first.");
+      request = { kind: "track", sequenceId: sequence.sequenceId, trackIndex };
+    }
+    setTrackProgress(10, "Exporting Premiere timeline audio...");
+    const prepared = await premiereAudioClient.exportTimelineAudio(request, jobId);
+    const media = await loadMediaFileFromPath(prepared.audioPath);
+    if (revision !== mediaRevision) { temporaryMedia.cleanupJobAudio(jobId); return false; }
+    loadAudioFile(media.blob, "Timeline audio", prepared.audioPath);
+    preparedTimelineAudio = prepared;
+    loadedTimelineContext = {
+      sequenceId: prepared.sequenceId,
+      timelineStartSec: prepared.timelineStartSec,
+      audioDurationSec: prepared.durationSec
+    };
+    temporaryMedia.releasePreviousDocuments(jobId);
+    notify("Timeline audio loaded. Generate captions to transcribe it.");
+    return true;
+  } catch (error: any) {
+    temporaryMedia.cleanupJobAudio(jobId);
+    notify(error.message || "Timeline export failed.", true);
+    return false;
   } finally {
     btnLoadTrack.disabled = false;
+    hideTrackProgress();
+  }
+}
+
+btnLoadTrack.addEventListener("click", () => { void loadPremiereAudio(); });
+
+btnGenerateSelection.addEventListener("click", async () => {
+  setAudioSourceKind("range");
+  btnGenerateSelection.disabled = true;
+  try {
+    if (await loadPremiereAudio("range")) btnTranscribe.click();
+  } finally {
+    btnGenerateSelection.disabled = false;
   }
 });
 
@@ -529,6 +524,10 @@ async function handleFileSelected(file: File): Promise<void> {
     const cues = name.endsWith(".vtt") ? parseVtt(text) : parseSrt(text);
     if (cues.length > 0) {
       pushCueHistory();
+      mediaRevision++;
+      activeVerificationController?.stop();
+      transcriptionJobController.cancelActiveJob();
+      timelineDocument = null;
       currentCues = cues;
       detectedIsSinhala = isSinhalaText(cues.map((c) => c.text).join(" "));
       updateSinhalaUiState();
@@ -669,62 +668,32 @@ btnTranscribe.addEventListener("click", async () => {
 
   try {
     let result: TranscribeResult;
-    const workerHealth = currentMediaPath ? await checkLocalWorkerHealth() : null;
-
-    if (workerHealth && currentMediaPath) {
-      setCaptionProgress(12, `Local Media Worker active (${workerHealth.version}) - Streaming...`);
-      try {
-        result = await transcribeWithLocalWorker({
-          mediaPath: currentMediaPath,
-          language: appSettings.language || "auto",
-          apiKey: appSettings.geminiApiKey,
-          signal: activeVerificationController.signal,
-          onProgress: (p) => {
-            const pct = p.percent ?? 50;
-            setCaptionProgress(pct, p.message);
-          },
-          onCue: (newCue) => {
-            currentCues.push(newCue);
-            appendSingleCueCard(newCue, currentCues.length - 1);
-            const count = currentCues.length;
-            setCaptionProgress(Math.min(90, 20 + count * 4), `Generated line #${count}...`);
-          }
-        });
-      } catch (workerErr: any) {
-        console.warn("Local Media Worker failed, falling back to in-memory chunking:", workerErr);
-        result = await transcribeAudioChunked({
-          file: currentAudioFile,
-          settings: appSettings,
-          signal: activeVerificationController.signal,
-          onProgress: (p) => {
-            const pct = p.percent ?? 50;
-            setCaptionProgress(pct, p.message);
-          },
-          onCue: (newCue) => {
-            currentCues.push(newCue);
-            appendSingleCueCard(newCue, currentCues.length - 1);
-            const count = currentCues.length;
-            setCaptionProgress(Math.min(90, 20 + count * 4), `Generated line #${count}...`);
-          }
-        });
-      }
+    const revision = mediaRevision;
+    const signal = activeVerificationController.signal;
+    const onCue = (cue: SubtitleCue) => {
+      if (signal.aborted || revision !== mediaRevision) return;
+      currentCues.push(cue);
+      appendSingleCueCard(cue, currentCues.length - 1);
+    };
+    if (preparedTimelineAudio) {
+      const prepared = preparedTimelineAudio;
+      const document = await transcriptionJobController.executeJob(
+        { kind: "range", sequenceId: prepared.sequenceId, startSec: prepared.timelineStartSec,
+          endSec: prepared.timelineStartSec + prepared.durationSec },
+        { ...appSettings }, async () => prepared,
+        { onCue, onProgress: p => { if (!signal.aborted && revision === mediaRevision) setCaptionProgress(p.percent, p.message); } }
+      );
+      if (signal.aborted || revision !== mediaRevision) return;
+      timelineDocument = document;
+      result = { cues: document.cues, providerUsed: appSettings.sttProvider,
+        isSinhala: isSinhalaText(document.cues.map(c => c.text).join(" ")) };
     } else {
       result = await transcribeAudioChunked({
-        file: currentAudioFile,
-        settings: appSettings,
-        signal: activeVerificationController.signal,
-        onProgress: (p) => {
-          const pct = p.percent ?? 50;
-          setCaptionProgress(pct, p.message);
-        },
-        onCue: (newCue) => {
-          currentCues.push(newCue);
-          appendSingleCueCard(newCue, currentCues.length - 1);
-          const count = currentCues.length;
-          setCaptionProgress(Math.min(90, 20 + count * 4), `Generated line #${count}...`);
-        }
+        file: currentAudioFile, settings: { ...appSettings }, signal, onCue,
+        onProgress: p => { if (!signal.aborted && revision === mediaRevision) setCaptionProgress(p.percent ?? 50, p.message); }
       });
     }
+    if (signal.aborted || revision !== mediaRevision) return;
 
     if (result.cues.length === 0 && currentCues.length === 0) {
       notify("No speech detected in audio.", true);
@@ -736,6 +705,14 @@ btnTranscribe.addEventListener("click", async () => {
 
     setCaptionProgress(92, "Optimizing line lengths & timestamps...");
     currentCues = optimizeAllCues(currentCues, appSettings.maxCpl || 38);
+    if (loadedTimelineContext) {
+      timelineDocument = createTimelineCaptionDocument(
+        loadedTimelineContext.sequenceId,
+        loadedTimelineContext.timelineStartSec,
+        loadedTimelineContext.audioDurationSec,
+        currentCues
+      );
+    }
     detectedIsSinhala = result.isSinhala || isSinhalaText(currentCues.map((c) => c.text).join(" "));
     updateSinhalaUiState();
 
@@ -743,6 +720,9 @@ btnTranscribe.addEventListener("click", async () => {
     renderCuesList();
     setCaptionProgress(100, `Generated ${currentCues.length} captions!`);
     notify(`Generated ${currentCues.length} captions using ${result.providerUsed}!`);
+    if (appSettings.autoImportCaptions) {
+      await importCurrentCaptions();
+    }
   } catch (err: any) {
     notify(err.message || "Transcription failed.", true);
   } finally {
@@ -1126,13 +1106,25 @@ function getProcessedCues(): SubtitleCue[] {
   return convertSubtitleCues(currentCues, subtitleEncoding);
 }
 
-btnImportPremiere.addEventListener("click", async () => {
+async function importCurrentCaptions(): Promise<void> {
   if (currentCues.length === 0) return notify("No captions to import.", true);
-  const srtContent = generateSrt(getProcessedCues());
-  notify("Importing captions to Premiere Pro...");
-  const result = await importSubtitlesIntoPremiere(srtContent, `AutoCap_${subtitleEncoding}.srt`);
-  notify(result.message, !result.success);
-});
+  btnImportPremiere.disabled = true;
+  try {
+    const sequence = await inspectTimeline();
+    const document: TimelineCaptionDocument = timelineDocument
+      ? { ...timelineDocument, cues: getProcessedCues() }
+      : { sequenceId: sequence.sequenceId, timelineStartSec: 0,
+          audioDurationSec: Math.max(...currentCues.map(c => c.end)), cues: getProcessedCues() };
+    const result = await premiereCaptionsClient.importCaptionDocument(document, sequence.sequenceName);
+    notify(result.message, result.status === "failed");
+  } catch (error: any) {
+    notify(error.message || "Caption import failed.", true);
+  } finally {
+    btnImportPremiere.disabled = false;
+  }
+}
+
+btnImportPremiere.addEventListener("click", () => { void importCurrentCaptions(); });
 
 btnExportSrt.addEventListener("click", async () => {
   if (currentCues.length === 0) return notify("No captions to export.", true);
@@ -1365,6 +1357,7 @@ const inputGroqKey = document.querySelector<HTMLInputElement>("#input-groq-key")
 const inputOpenaiKey = document.querySelector<HTMLInputElement>("#input-openai-key")!;
 const inputMaxCpl = document.querySelector<HTMLInputElement>("#input-max-cpl")!;
 const btnSaveSettings = document.querySelector<HTMLButtonElement>("#btn-save-settings")!;
+const prefAutoImport = document.querySelector<HTMLInputElement>("#pref-auto-import");
 
 const toggleGeminiKey = document.querySelector<HTMLButtonElement>("#toggle-gemini-key");
 const toggleGroqKey = document.querySelector<HTMLButtonElement>("#toggle-groq-key");
@@ -1398,6 +1391,7 @@ inputGeminiKey.value = appSettings.geminiApiKey || "";
 inputGroqKey.value = appSettings.groqApiKey || "";
 inputOpenaiKey.value = appSettings.openaiApiKey || "";
 inputMaxCpl.value = String(appSettings.maxCpl || 38);
+if (prefAutoImport) prefAutoImport.checked = appSettings.autoImportCaptions === true;
 selectLanguage.value = appSettings.language || "auto";
 selectProvider.value = appSettings.sttProvider || "gemini";
 updateKeyBadges();
@@ -1423,6 +1417,11 @@ inputOpenaiKey.addEventListener("input", () => {
 
 inputMaxCpl.addEventListener("change", () => {
   appSettings.maxCpl = parseInt(inputMaxCpl.value, 10) || 38;
+  saveSettings(appSettings);
+});
+
+prefAutoImport?.addEventListener("change", () => {
+  appSettings.autoImportCaptions = prefAutoImport.checked;
   saveSettings(appSettings);
 });
 
@@ -1557,6 +1556,8 @@ btnResetSettings?.addEventListener("click", () => {
   inputGroqKey.value = "";
   inputOpenaiKey.value = "";
   inputMaxCpl.value = "38";
+  if (prefAutoImport) prefAutoImport.checked = false;
+  appSettings.autoImportCaptions = false;
   if (settingsLanguageSelect) settingsLanguageSelect.value = "si";
   selectLanguage.value = "si";
   selectProvider.value = "gemini";
@@ -1568,7 +1569,7 @@ btnResetSettings?.addEventListener("click", () => {
 // ==========================================================================
 // Audio Source Scope Segmented Selector
 // ==========================================================================
-let activeSourceKind: "sequence" | "track" | "range" = "sequence";
+let activeSourceKind: "sequence" | "track" | "range" = "range";
 const btnSrcKindSeq = document.querySelector<HTMLButtonElement>("#src-kind-seq");
 const btnSrcKindTrack = document.querySelector<HTMLButtonElement>("#src-kind-track");
 const btnSrcKindRange = document.querySelector<HTMLButtonElement>("#src-kind-range");
@@ -1582,6 +1583,11 @@ function setAudioSourceKind(kind: "sequence" | "track" | "range"): void {
   if (trackSelectWrapper) {
     trackSelectWrapper.hidden = kind !== "track";
   }
+  btnLoadTrack.textContent = kind === "sequence"
+    ? "Load Entire Sequence"
+    : kind === "track"
+      ? "Load Audio Track"
+      : "Load Selected Range";
 }
 
 btnSrcKindSeq?.addEventListener("click", () => setAudioSourceKind("sequence"));
@@ -1604,15 +1610,32 @@ if (inputAudioPresetPath) {
   inputAudioPresetPath.value = audioPresetManager.getSelectedPresetPath();
 }
 
+function refreshPresetValidation(): void {
+  const path = (inputAudioPresetPath?.value || "").trim();
+  const validation = audioPresetManager.validatePreset(path);
+  if (presetStatusBadge) {
+    presetStatusBadge.textContent = validation.valid ? "✓ WAV Ready" : "Setup needed";
+    presetStatusBadge.classList.toggle("active", validation.valid);
+  }
+  if (!validation.valid && path && presetFeedback) {
+    presetFeedback.textContent = validation.reason || "Choose an audio-only Waveform Audio preset.";
+    presetFeedback.className = "settings-feedback error";
+  }
+}
+
+refreshPresetValidation();
+
 audioPresetSelect?.addEventListener("change", () => {
   if (audioPresetSelect.value && inputAudioPresetPath) {
     inputAudioPresetPath.value = audioPresetSelect.value;
     audioPresetManager.setSelectedPresetPath(audioPresetSelect.value);
+    refreshPresetValidation();
   }
 });
 
 inputAudioPresetPath?.addEventListener("input", () => {
   audioPresetManager.setSelectedPresetPath(inputAudioPresetPath.value);
+  refreshPresetValidation();
 });
 
 btnFindPresets?.addEventListener("click", async () => {
@@ -1634,6 +1657,7 @@ btnFindPresets?.addEventListener("click", async () => {
       });
       if (inputAudioPresetPath) inputAudioPresetPath.value = presets[0].path;
       audioPresetManager.setSelectedPresetPath(presets[0].path);
+      refreshPresetValidation();
       if (presetFeedback) {
         presetFeedback.textContent = `✓ Found ${presets.length} export presets! Selected: ${presets[0].name}`;
         presetFeedback.className = "settings-feedback success";
@@ -1796,7 +1820,7 @@ scanPremiereTracks();
 const statusReadyEl = document.querySelector<HTMLElement>(".status-ready");
 checkLocalWorkerHealth().then((health) => {
   if (statusReadyEl) {
-    if (health) {
+    if (health && canProcessTranscription(health)) {
       statusReadyEl.innerHTML = `<span class="status-dot"></span> Ready (Worker Active)`;
       statusReadyEl.title = `AutoCap Local Media Worker companion process active (${health.version})`;
     } else {

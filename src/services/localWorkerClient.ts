@@ -8,6 +8,7 @@ export interface LocalWorkerHealth {
   version: string;
   worker: string;
   ffmpegAvailable: boolean;
+  capabilities?: { transcription?: boolean };
 }
 
 /**
@@ -195,3 +196,7 @@ export async function transcribeWithLocalWorker(
   });
 }
 
+
+export function canProcessTranscription(health: LocalWorkerHealth | null): boolean {
+  return health?.status === "ok" && health.worker === "autocap-local-worker" && health.ffmpegAvailable && health.capabilities?.transcription === true;
+}

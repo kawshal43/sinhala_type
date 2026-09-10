@@ -39,3 +39,22 @@ describe("GeminiModelRegistry", () => {
     expect(defaults).toContain("gemini-2.0-flash");
   });
 });
+
+
+it("keeps model caches separate for keys sharing a suffix", async () => {
+  const registry = new GeminiModelRegistry();
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ models: [{ name: "models/gemini-flash-test", supportedGenerationMethods: ["generateContent"] }] }) } as Response);
+  try {
+    await registry.getCandidateModels("first-12345678");
+    await registry.getCandidateModels("second-12345678");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally { fetchMock.mockRestore(); }
+});
+it("propagates cancellation during model discovery", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("cancelled"));
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(controller.signal.reason);
+  try {
+    await expect(new GeminiModelRegistry().getCandidateModels("key", "flash", controller.signal)).rejects.toThrow("cancelled");
+  } finally { fetchMock.mockRestore(); }
+});

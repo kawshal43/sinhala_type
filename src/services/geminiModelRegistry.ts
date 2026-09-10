@@ -20,14 +20,15 @@ export class GeminiModelRegistry {
 
   private getKeyId(apiKey: string): string {
     if (!apiKey) return "anonymous";
-    // Key identity hash (last 8 characters)
-    return apiKey.slice(-8);
+    // Exact in-memory key identity; never persist or display this map.
+    return apiKey;
   }
 
   /**
    * Fetches all available Gemini models with pagination support.
    */
-  public async discoverModels(apiKey: string): Promise<GeminiModelInfo[]> {
+  public async discoverModels(apiKey: string, signal?: AbortSignal): Promise<GeminiModelInfo[]> {
+    if (signal?.aborted) throw signal.reason || new Error("Discovery cancelled.");
     const keyId = this.getKeyId(apiKey);
     const cached = this.cache.get(keyId);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
@@ -46,7 +47,18 @@ export class GeminiModelRegistry {
         url.searchParams.set("pageToken", pageToken);
       }
 
-      const res = await fetch(url.toString(), { method: "GET" });
+      const controller = new AbortController();
+      const cancel = () => controller.abort(signal?.reason);
+      signal?.addEventListener("abort", cancel, { once: true });
+      const timer = setTimeout(() => controller.abort(new Error("Model discovery timed out.")), 15000);
+      let res: Response;
+      try {
+        if (signal?.aborted) cancel();
+        res = await fetch(url.toString(), { method: "GET", signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const msg = data?.error?.message || `HTTP ${res.status}`;
@@ -92,7 +104,7 @@ export class GeminiModelRegistry {
     preference: ModelPreference = "flash",
     lastSuccessfulModel?: string
   ): string[] {
-    const names = models.map((m) => m.name);
+    const names = models.map((m) => m.name).filter((name) => !/image|tts|embedding|native.audio|audio.native/i.test(name));
 
     const scored = names.map((name) => {
       let score = 0;
@@ -133,11 +145,12 @@ export class GeminiModelRegistry {
 
   /**
    * Returns ranked candidate model list for an API key.
-   * Falls back to standard verified production models if discovery fails.
+   * Discovery errors are surfaced instead of hiding authentication failures.
    */
   public async getCandidateModels(
     apiKey: string,
-    preference: ModelPreference = "flash"
+    preference: ModelPreference = "flash",
+    signal?: AbortSignal
   ): Promise<string[]> {
     const defaultModels = preference === "flash"
       ? ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-1.5-pro"]
@@ -150,12 +163,13 @@ export class GeminiModelRegistry {
       const cached = this.cache.get(keyId);
       const lastSuccess = cached?.preferredCandidate || undefined;
 
-      const discovered = await this.discoverModels(apiKey);
+      const discovered = await this.discoverModels(apiKey, signal);
       if (discovered.length === 0) return defaultModels;
 
       return this.rankModels(discovered, preference, lastSuccess);
-    } catch {
-      return defaultModels;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason || error;
+      throw error;
     }
   }
 
@@ -186,3 +200,4 @@ export class GeminiModelRegistry {
 }
 
 export const geminiModelRegistry = new GeminiModelRegistry();
+

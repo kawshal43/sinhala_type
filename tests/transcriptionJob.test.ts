@@ -112,6 +112,7 @@ describe("TranscriptionJobController", () => {
         status: "ok",
         version: "1.3.1",
         worker: "autocap-local-worker",
+        capabilities: { transcription: true },
         ffmpegAvailable: true
       })
     ).toBe(true);

@@ -10,6 +10,7 @@ export interface AppSettings {
   language: LanguageChoice;
   defaultEncoding: DefaultEncoding;
   maxCpl: number;
+  autoImportCaptions?: boolean;
 }
 
 const SETTINGS_KEY = "autocap.settings.v1";
@@ -21,7 +22,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: "",
   language: "auto",
   defaultEncoding: "unicode",
-  maxCpl: 38
+  maxCpl: 38,
+  autoImportCaptions: false
 };
 
 // In-memory cache fallback

@@ -741,7 +741,14 @@ input:checked + .slider:before {
 
 .track-action-buttons-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+#btn-generate-selection {
+  flex-basis: 100%;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
 }
 
 .track-load-btn {
@@ -1655,4 +1662,3 @@ textarea#singlish:focus {
   justify-content: center;
   gap: 6px;
 }
-

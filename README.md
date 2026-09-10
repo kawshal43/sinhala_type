@@ -45,10 +45,12 @@ After installation, restart Premiere Pro and open **Window > Extensions (Legacy)
 ## Use
 
 ### Auto Caption
-1. Drop your audio or video file into the Auto Caption drop zone, or record with your microphone.
-2. Select your language and AI engine.
-3. Click **Generate Auto Captions**.
-4. Click **Import to Premiere** to add the subtitles to your project bin, or export as `.srt`.
+1. Select one or more clips in the Premiere timeline and click **Generate From Selection**. A single source clip is extracted directly; multi-clip ranges are rendered through Premiere with a compatible WAV preset.
+2. Alternatively, choose **Entire Sequence** or **Audio Track**, then click the load button. AutoCap finds and remembers an audio-only Waveform Audio `.epr` preset automatically.
+3. Select your language and AI engine, then click **Generate Auto Captions** if you did not use the one-click selection action.
+4. Review the captions and click **Import to Premiere**. Enable **Automatically add caption track after generation** in Settings if you want immediate native caption-track creation.
+
+Video/AAC `.epr` files are rejected because Premiere requires the preset format to match AutoCap's WAV output. If no compatible preset exists, create one in Premiere with **File > Export > Media > Waveform Audio**, disable video, and save it as a preset.
 
 ### Sinhala Typer
 1. Switch to **Sinhala Typer**.

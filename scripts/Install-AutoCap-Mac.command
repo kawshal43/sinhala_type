@@ -55,6 +55,14 @@ if [ -e "$DESTINATION" ]; then
 fi
 /usr/bin/ditto "$SOURCE_ROOT" "$DESTINATION"
 
+FONT_SOURCE="$DESTINATION/assets/fonts"
+USER_FONTS="$HOME/Library/Fonts"
+/bin/mkdir -p "$USER_FONTS"
+if [ -d "$FONT_SOURCE" ]; then
+  /usr/bin/find "$FONT_SOURCE" -maxdepth 1 -type f \( -name '*.ttf' -o -name '*.otf' \) -exec /bin/cp -f {} "$USER_FONTS/" \;
+fi
+[ -f "$USER_FONTS/NotoSansSinhala-Regular.ttf" ] || [ -f "$USER_FONTS/AbhayaLibre-Regular.ttf" ] || fail "The mixed Sinhala and English font could not be installed."
+
 /usr/bin/defaults write com.adobe.CSXS.11 PlayerDebugMode -string 1
 /usr/bin/defaults write com.adobe.CSXS.12 PlayerDebugMode -string 1
 

@@ -34,3 +34,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## Wije font asset
 
 `wije6samethicknesstallround.ttf` was supplied by the application owner. No separate font license accompanied the asset. The application owner must confirm redistribution rights before public distribution.
+
+## Abhaya Libre font
+
+Copyright (c) 2013-2016 Abhaya Libre Project Authors.
+
+The bundled `AbhayaLibre-Regular.ttf` and `AbhayaLibre-Bold.ttf` files are licensed under the SIL Open Font License, Version 1.1. The complete license is distributed with the font files as `OFL-AbhayaLibre.txt`.

@@ -61,6 +61,10 @@ function host(failRestore = false) {
 const request = { kind: "range", sequenceId: "actual", startSec: 10, endSec: 15,
   trackIndex: 1, presetPath: "preset.epr", outputPath: "output.wav" };
 describe("Premiere host regressions", () => {
+  it("uses syntax supported by Adobe ExtendScript", () => {
+    expect(source).not.toMatch(/\?\.|\?\?/);
+    expect(source).not.toMatch(/=>/);
+  });
   it("does not export a different sequence when the requested ID is missing", () => {
     const h = host();
     const result = JSON.parse(h.api.exportTimelineAudio({ ...request, sequenceId: "missing" }));

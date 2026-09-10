@@ -486,13 +486,178 @@ $._AutoCap_Host = (function () {
     return { updatedCount: updated };
   }
 
+  function setTextPropertyValue(prop, text) {
+    if (!prop) return false;
+
+    // 1. In Premiere Pro MOGRTs, text properties often store a JSON object with textEditValue
+    var currentVal = null;
+    try {
+      if (prop.getValue) {
+        currentVal = prop.getValue();
+      }
+    } catch (gvErr) {}
+
+    if (typeof currentVal === "string" && currentVal.length > 0) {
+      if (currentVal.charAt(0) === "{" || currentVal.indexOf("textEditValue") !== -1) {
+        try {
+          var parsed = JSON.parse(currentVal);
+          if (parsed && typeof parsed === "object") {
+            parsed.textEditValue = String(text);
+            var updatedJson = JSON.stringify(parsed);
+            try {
+              prop.setValue(updatedJson, 1);
+              return true;
+            } catch (sj1Err) {
+              try {
+                prop.setValue(updatedJson);
+                return true;
+              } catch (sj2Err) {}
+            }
+          }
+        } catch (jsonErr) {}
+      }
+    }
+
+    // 2. Direct setValue with updateUI = 1
+    try {
+      prop.setValue(String(text), 1);
+      return true;
+    } catch (sv1Err) {}
+
+    // 3. Direct setValue with no second argument
+    try {
+      prop.setValue(String(text));
+      return true;
+    } catch (sv2Err) {}
+
+    // 4. Try wrapped JSON object
+    try {
+      var wrapper = JSON.stringify({ textEditValue: String(text) });
+      prop.setValue(wrapper, 1);
+      return true;
+    } catch (sv3Err) {}
+
+    return false;
+  }
+
+  function getCandidatePropertyCollections(trackItem) {
+    var collections = [];
+    if (!trackItem) return collections;
+
+    // 1. Try getMGTComponent() (After Effects MOGRTs)
+    try {
+      if (trackItem.getMGTComponent) {
+        var mgt = trackItem.getMGTComponent();
+        if (mgt && mgt.properties) {
+          collections.push(mgt.properties);
+        }
+      }
+    } catch (mgtErr) {}
+
+    // 2. Try trackItem.components (Premiere Pro Essential Graphics & native clips)
+    try {
+      if (trackItem.components) {
+        for (var i = 0; i < trackItem.components.numItems; i++) {
+          var comp = trackItem.components[i];
+          if (comp && comp.properties) {
+            collections.push(comp.properties);
+          }
+        }
+      }
+    } catch (compErr) {}
+
+    return collections;
+  }
+
   function applyMogrtControls(trackItem, text, style) {
     var applied = [];
     var missing = [];
-    var component = trackItem && trackItem.getMGTComponent ? trackItem.getMGTComponent() : null;
-    var properties = component && component.properties ? component.properties : null;
-    var controls = [
-      { key: "text", aliases: ["text", "source text", "caption", "caption text", "title", "textlayer"], value: text },
+    var debugProperties = [];
+    var propCollections = getCandidatePropertyCollections(trackItem);
+
+    var textAliases = [
+      "text", "source text", "caption", "caption text", "title", "textlayer",
+      "textebene", "capa de texto", "calque de texte"
+    ];
+
+    // Find and apply text
+    var textApplied = false;
+
+    // Pass 1: Try getParamForDisplayName on each collection with aliases
+    for (var i = 0; i < propCollections.length && !textApplied; i++) {
+      var col = propCollections[i];
+      if (col.getParamForDisplayName) {
+        for (var a = 0; a < textAliases.length; a++) {
+          try {
+            var directProp = col.getParamForDisplayName(textAliases[a]);
+            if (directProp && setTextPropertyValue(directProp, text)) {
+              textApplied = true;
+              break;
+            }
+          } catch (dpErr) {}
+        }
+      }
+    }
+
+    // Pass 2: Iterate through all properties in all collections
+    var allProps = [];
+    for (var j = 0; j < propCollections.length; j++) {
+      var collection = propCollections[j];
+      var count = collection.numItems || 0;
+      for (var p = 0; p < count; p++) {
+        var prop = collection[p];
+        if (!prop) continue;
+        allProps.push(prop);
+        var propName = prop.displayName || prop.name || "";
+        if (propName) debugProperties.push(propName);
+        if (!textApplied && nameMatches(propName, textAliases)) {
+          if (setTextPropertyValue(prop, text)) {
+            textApplied = true;
+          }
+        }
+      }
+    }
+
+    // Pass 3: Check if any property's getValue() contains textEditValue
+    if (!textApplied) {
+      for (var k = 0; k < allProps.length; k++) {
+        var candidate = allProps[k];
+        try {
+          if (candidate.getValue) {
+            var val = candidate.getValue();
+            if (typeof val === "string" && (val.indexOf("textEditValue") !== -1 || val.indexOf("Captions and Subtitles") !== -1)) {
+              if (setTextPropertyValue(candidate, text)) {
+                textApplied = true;
+                break;
+              }
+            }
+          }
+        } catch (cgvErr) {}
+      }
+    }
+
+    // Pass 4: Fallback for single/minimal-control MOGRTs (the non-shape, non-motion property)
+    if (!textApplied) {
+      for (var m = 0; m < allProps.length; m++) {
+        var fallbackProp = allProps[m];
+        var pName = normalizeControlName(fallbackProp.displayName || fallbackProp.name || "");
+        if (pName !== "layername" && pName !== "shape" && pName !== "opacity" && pName !== "position" && pName !== "scale" && pName !== "rotation") {
+          if (setTextPropertyValue(fallbackProp, text)) {
+            textApplied = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (textApplied) {
+      applied.push("text");
+    } else {
+      missing.push("text");
+    }
+
+    // Apply optional style properties (font, color, etc.) if exposed
+    var styleControls = [
       { key: "fontFamily", aliases: ["font", "font family", "font name"], value: style.fontFamily },
       { key: "fontSize", aliases: ["font size", "text size", "size"], value: style.fontSize },
       { key: "fillColor", aliases: ["fill color", "text color", "font color", "color"], value: style.fillColor, color: true },
@@ -506,34 +671,34 @@ $._AutoCap_Host = (function () {
       { key: "animationDuration", aliases: ["animation duration", "effect duration"], value: style.animationDuration }
     ];
 
-    for (var c = 0; c < controls.length; c++) {
-      var control = controls[c];
-      if (control.key !== "text" && (typeof control.value === "undefined" || control.value === "")) continue;
-      var found = false;
-      if (properties) {
-        for (var p = 0; p < properties.numItems; p++) {
-          var prop = properties[p];
-          if (!prop || !nameMatches(prop.displayName, control.aliases)) continue;
-          try {
-            if (control.color && prop.setColorValue) {
-              var color = parseHexColor(control.value);
-              if (!color) break;
-              prop.setColorValue(color.a, color.r, color.g, color.b, 1);
-            } else {
-              var value = control.choices ? control.choices[control.value] : control.value;
-              prop.setValue(value, 1);
+    for (var s = 0; s < styleControls.length; s++) {
+      var sc = styleControls[s];
+      if (typeof sc.value === "undefined" || sc.value === "") continue;
+      var styleApplied = false;
+      for (var ap = 0; ap < allProps.length; ap++) {
+        var sp = allProps[ap];
+        var sName = sp.displayName || sp.name || "";
+        if (!nameMatches(sName, sc.aliases)) continue;
+        try {
+          if (sc.color && sp.setColorValue) {
+            var color = parseHexColor(sc.value);
+            if (color) {
+              sp.setColorValue(color.a, color.r, color.g, color.b, 1);
+              styleApplied = true;
+              break;
             }
-            found = true;
-            break;
-          } catch (setErr) {
-            found = false;
+          } else {
+            var sVal = sc.choices ? sc.choices[sc.value] : sc.value;
+            sp.setValue(sVal, 1);
+            styleApplied = true;
             break;
           }
-        }
+        } catch (sErr) {}
       }
-      (found ? applied : missing).push(control.key);
+      (styleApplied ? applied : missing).push(sc.key);
     }
-    return { applied: applied, missing: missing };
+
+    return { applied: applied, missing: missing, debugProperties: debugProperties };
   }
 
   function insertMogrtItem(sequence, templatePath, trackIndex, startSec, durationSec, text, style) {
@@ -643,7 +808,7 @@ $._AutoCap_Host = (function () {
             code: "TEXT_CONTROL_NOT_FOUND",
             batchInserted: insertedCount,
             batchStartIndex: batchStartIndex,
-            message: "Stopped because the MOGRT does not expose a Text or Caption control.",
+            message: ("Stopped because the MOGRT does not expose a Text or Caption control." + (result.properties && result.properties.debugProperties && result.properties.debugProperties.length > 0 ? " (Found: " + result.properties.debugProperties.join(", ") + ")" : "")),
             appliedProperties: mapKeys(appliedMap),
             missingProperties: mapKeys(missingMap)
           });
@@ -683,16 +848,22 @@ $._AutoCap_Host = (function () {
       };
       var batchRes = insertCaptionGraphicsBatch(batchReq);
       if (typeof batchRes === "string") batchRes = JSON.parse(batchRes);
-      if (!batchRes.success) return makeError(batchRes.error?.code || "MOGRT_FAILED", batchRes.error?.message || "Failed inserting graphics");
+      if (!batchRes.success) {
+        var batchError = batchRes.error || {};
+        return makeError(batchError.code || "MOGRT_FAILED", batchError.message || "Failed inserting graphics");
+      }
+
+      var batchData = batchRes.data || {};
+      var insertedCount = typeof batchData.batchInserted === "number" ? batchData.batchInserted : 0;
 
       return makeSuccess({
-        success: batchRes.data?.success !== false,
-        code: batchRes.data?.code,
-        insertedCount: batchRes.data?.batchInserted || cues.length,
+        success: batchData.success !== false,
+        code: batchData.code,
+        insertedCount: insertedCount,
         requestedCount: cues.length,
-        message: "Inserted " + (batchRes.data?.batchInserted || cues.length) + " styled caption graphics.",
-        appliedProperties: batchRes.data?.appliedProperties,
-        missingProperties: batchRes.data?.missingProperties
+        message: "Inserted " + insertedCount + " styled caption graphics.",
+        appliedProperties: batchData.appliedProperties,
+        missingProperties: batchData.missingProperties
       });
     } catch (err) {
       return makeError("MOGRT_BATCH_FAILED", err.message || err.toString());

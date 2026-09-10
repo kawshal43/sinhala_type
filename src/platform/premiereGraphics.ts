@@ -12,7 +12,13 @@ import { convertCaptionText } from "../core/subtitles/captionConverter";
 
 export function resolveDefaultMogrtPath(): string {
   try {
-    const csInterface = (window as any)?.__adobe_cep__ ? new (window as any).CSInterface() : null;
+    const cep = (window as any)?.__adobe_cep__;
+    const directPath = cep && typeof cep.getSystemPath === "function" ? cep.getSystemPath("extension") : "";
+    if (directPath) {
+      return `${String(directPath).replace(/\\/g, "/").replace(/\/$/, "")}/assets/AutoCapCaption.mogrt`;
+    }
+    const CsInterfaceConstructor = (window as any)?.CSInterface;
+    const csInterface = cep && typeof CsInterfaceConstructor === "function" ? new CsInterfaceConstructor() : null;
     if (csInterface && typeof csInterface.getSystemPath === "function") {
       const extPath = csInterface.getSystemPath("extension");
       if (extPath) {
@@ -160,14 +166,15 @@ export class PremiereGraphicsClient {
         totalInserted += slice.length;
         if (options?.onProgress) {
           const percentage = Math.round((totalInserted / cues.length) * 100);
-          options.onProgress({
-            inserted: totalInserted,
-            total: cues.length,
-            percentage,
-            currentBatch: b + 1,
-            totalBatches,
-            statusText: `Adding graphic ${totalInserted} of ${cues.length} (${percentage}%)...`
-          });
+            const verb = request.mode === "timing-only" ? "Updating timing for graphic" : "Adding graphic";
+            options.onProgress({
+              inserted: totalInserted,
+              total: cues.length,
+              percentage,
+              currentBatch: b + 1,
+              totalBatches,
+              statusText: `${verb} ${totalInserted} of ${cues.length} (${percentage}%)...`
+            });
         }
         await new Promise((resolve) => setTimeout(resolve, 30));
       }
@@ -221,19 +228,20 @@ export class PremiereGraphicsClient {
           };
         }
 
-        totalInserted += batchResult.batchInserted || batchCues.length;
+        totalInserted += typeof batchResult.batchInserted === "number" ? batchResult.batchInserted : 0;
         batchResult.appliedProperties?.forEach((p) => appliedSet.add(p));
         batchResult.missingProperties?.forEach((p) => missingSet.add(p));
 
         if (options?.onProgress) {
           const percentage = Math.round((totalInserted / cues.length) * 100);
+          const verb = request.mode === "timing-only" ? "Updating timing for graphic" : "Adding graphic";
           options.onProgress({
             inserted: totalInserted,
             total: cues.length,
             percentage,
             currentBatch: b + 1,
             totalBatches,
-            statusText: `Adding graphic ${totalInserted} of ${cues.length} (${percentage}%)...`
+            statusText: `${verb} ${totalInserted} of ${cues.length} (${percentage}%)...`
           });
         }
 
@@ -253,13 +261,35 @@ export class PremiereGraphicsClient {
     const appliedProperties = Array.from(appliedSet);
     const missingProperties = Array.from(missingSet);
 
+    const isTimingOnly = request.mode === "timing-only";
+    const operationComplete = totalInserted === cues.length;
+
+    let code: string | undefined;
+    let message: string;
+
+    if (operationComplete) {
+      message = isTimingOnly
+        ? `Successfully updated timing for ${totalInserted} caption graphics on Video ${request.targetVideoTrackIndex + 1}.`
+        : `Successfully processed ${totalInserted} caption graphics on Video ${request.targetVideoTrackIndex + 1}.`;
+    } else if (isTimingOnly && totalInserted === 0) {
+      code = "NO_MATCHING_GRAPHICS";
+      message = `No existing AutoCap graphics found on Video ${request.targetVideoTrackIndex + 1} to update timing.`;
+    } else if (isTimingOnly) {
+      code = "PARTIAL_TIMING_UPDATE";
+      message = `Updated timing for ${totalInserted} of ${cues.length} caption graphics on Video ${request.targetVideoTrackIndex + 1}. Some clips may have been deleted or renamed.`;
+    } else {
+      code = "INCOMPLETE_OPERATION";
+      message = `Only ${totalInserted} of ${cues.length} caption graphics were processed. Existing clips may be missing or renamed.`;
+    }
+
     return {
-      success: true,
+      success: operationComplete,
+      code,
       insertedCount: totalInserted,
       requestedCount: cues.length,
       appliedProperties,
       missingProperties,
-      message: `Successfully inserted ${totalInserted} styled caption graphics onto Video ${request.targetVideoTrackIndex + 1}.`
+      message
     };
   }
 

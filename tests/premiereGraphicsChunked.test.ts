@@ -18,6 +18,16 @@ describe("premiereGraphicsClient chunked batch insertion", () => {
     delete (global as any).window;
   });
 
+  it("resolves the bundled template through the native CEP object", () => {
+    (global as any).window = {
+      __adobe_cep__: {
+        getSystemPath: (kind: string) => (kind === "extension" ? "C:\\Users\\Test\\AutoCap" : "")
+      }
+    };
+    expect(resolveDefaultMogrtPath()).toBe("C:/Users/Test/AutoCap/assets/AutoCapCaption.mogrt");
+    delete (global as any).window;
+  });
+
   it("handles batch slicing and calls onProgress correctly in browser demo mode", async () => {
     const cues = Array.from({ length: 12 }, (_, i) => ({
       id: i + 1,
@@ -103,4 +113,79 @@ describe("premiereGraphicsClient chunked batch insertion", () => {
     expect(resTrack.success).toBe(false);
     expect(resTrack.code).toBe("INVALID_TRACK");
   });
+
+  it("reports NO_MATCHING_GRAPHICS when timing-only mode updates 0 clips in CEP mode", async () => {
+    (global as any).window = {
+      __adobe_cep__: {
+        evalScript: (script: string, callback: (res: string) => void) => {
+          callback(
+            JSON.stringify({
+              success: true,
+              data: {
+                success: true,
+                batchInserted: 0,
+                appliedProperties: [],
+                missingProperties: []
+              }
+            })
+          );
+        }
+      }
+    };
+
+    const res = await premiereGraphicsClient.insertAllCaptionGraphicsChunked({
+      sequenceId: "seq_timing",
+      timelineStartSec: 0,
+      targetVideoTrackIndex: 2,
+      mode: "timing-only",
+      cues: [
+        { id: 1, start: 0, end: 2, text: "Cue 1" },
+        { id: 2, start: 2, end: 4, text: "Cue 2" }
+      ]
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.code).toBe("NO_MATCHING_GRAPHICS");
+    expect(res.insertedCount).toBe(0);
+    expect(res.message).toContain("No existing AutoCap graphics found on Video 3");
+    delete (global as any).window;
+  });
+
+  it("reports PARTIAL_TIMING_UPDATE when timing-only mode updates fewer clips than requested", async () => {
+    (global as any).window = {
+      __adobe_cep__: {
+        evalScript: (script: string, callback: (res: string) => void) => {
+          callback(
+            JSON.stringify({
+              success: true,
+              data: {
+                success: true,
+                batchInserted: 1,
+                appliedProperties: ["timing"],
+                missingProperties: []
+              }
+            })
+          );
+        }
+      }
+    };
+
+    const res = await premiereGraphicsClient.insertAllCaptionGraphicsChunked({
+      sequenceId: "seq_partial",
+      timelineStartSec: 0,
+      targetVideoTrackIndex: 1,
+      mode: "timing-only",
+      cues: [
+        { id: 1, start: 0, end: 2, text: "Cue 1" },
+        { id: 2, start: 2, end: 4, text: "Cue 2" }
+      ]
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.code).toBe("PARTIAL_TIMING_UPDATE");
+    expect(res.insertedCount).toBe(1);
+    expect(res.message).toContain("Updated timing for 1 of 2 caption graphics");
+    delete (global as any).window;
+  });
 });
+

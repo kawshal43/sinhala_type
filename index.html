@@ -250,54 +250,6 @@
             <div id="caption-graphics-drawer" class="caption-graphics-drawer" hidden>
               <div class="graphic-style-grid">
                 <div class="settings-field">
-                  <label for="caption-graphic-font">Unicode Font</label>
-                  <input id="caption-graphic-font" class="text-input" value="Noto Sans Sinhala" />
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-size">Font Size</label>
-                  <input id="caption-graphic-size" type="number" class="text-input" min="8" max="400" value="64" />
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-color">Text Color</label>
-                  <input id="caption-graphic-color" type="color" class="graphic-color-input" value="#ffffff" />
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-position-preset">Position</label>
-                  <select id="caption-graphic-position-preset" class="custom-select">
-                    <option value="bottom" selected>Bottom Center (960, 930)</option>
-                    <option value="center">Middle Center (960, 540)</option>
-                    <option value="top">Top Center (960, 150)</option>
-                    <option value="custom">Custom Coordinates...</option>
-                  </select>
-                </div>
-                <div id="custom-coords-container" class="custom-coords-row" hidden>
-                  <div class="settings-field">
-                    <label for="caption-graphic-x">X Position</label>
-                    <input id="caption-graphic-x" type="number" class="text-input" value="960" />
-                  </div>
-                  <div class="settings-field">
-                    <label for="caption-graphic-y">Y Position</label>
-                    <input id="caption-graphic-y" type="number" class="text-input" value="930" />
-                  </div>
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-align">Alignment</label>
-                  <select id="caption-graphic-align" class="custom-select">
-                    <option value="center" selected>Center</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </div>
-                <div class="settings-field">
-                  <label for="caption-graphic-animation">Animation / Effect</label>
-                  <select id="caption-graphic-animation" class="custom-select">
-                    <option value="none">None (Static)</option>
-                    <option value="fade" selected>Fade</option>
-                    <option value="pop">Pop</option>
-                    <option value="slide-up">Slide Up</option>
-                  </select>
-                </div>
-                <div class="settings-field">
                   <label for="caption-graphic-track">Target Video Track</label>
                   <select id="caption-graphic-track" class="custom-select">
                     <option value="0">Video 1 (V1)</option>
@@ -315,12 +267,7 @@
                   </select>
                 </div>
               </div>
-
-              <div class="graphic-toggle-row">
-                <label><input id="caption-graphic-stroke-toggle" type="checkbox" checked /> Stroke Outline</label>
-                <label><input id="caption-graphic-shadow" type="checkbox" checked /> Drop Shadow</label>
-                <label><input id="caption-graphic-background" type="checkbox" /> Box Background</label>
-              </div>
+              <p class="graphic-edit-note"><strong>Fully editable in Premiere:</strong> After insertion, select any AutoCap graphic and use Premiere's Properties panel to change its Sinhala/English text, font, size, color, position, stroke, shadow, animation, or other effects.</p>
 
               <!-- Insertion Progress Bar & Status -->
               <div id="graphic-insertion-progress" class="graphic-insertion-progress" hidden>

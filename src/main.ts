@@ -1205,10 +1205,37 @@ function typerClipboardValue(): string {
   return unicodeOutput;
 }
 
+let directEnglishMode = false;
+const btnToggleEnMode = document.querySelector<HTMLButtonElement>("#btn-toggle-en-mode");
+const enModeIcon = document.querySelector<HTMLSpanElement>("#en-mode-icon");
+const enModeLabel = document.querySelector<HTMLSpanElement>("#en-mode-label");
+const btnWrapEn = document.querySelector<HTMLButtonElement>("#btn-wrap-en");
+const typerMixedWarning = document.querySelector<HTMLDivElement>("#typer-mixed-warning");
+
 function renderTyper(): void {
-  unicodeOutput = transliterate(typerInput.value);
-  typerOutput.value = unicodeOutput;
+  if (directEnglishMode) {
+    unicodeOutput = typerInput.value;
+  } else {
+    unicodeOutput = transliterate(typerInput.value, {
+      customEnglishWords: appSettings.customEnglishWords,
+      preserveCommonEnglishWords: appSettings.preserveEnglishLoanwords !== false
+    });
+  }
+
+  if (typerOutputMode === "wije") {
+    typerOutput.value = unicodeToDlManel(unicodeOutput);
+  } else if (typerOutputMode === "isi") {
+    typerOutput.value = unicodeToIsi(unicodeOutput);
+  } else {
+    typerOutput.value = unicodeOutput;
+  }
   typerCount.textContent = `${Array.from(unicodeOutput).length} characters`;
+
+  // Detect mixed English + Sinhala in legacy encodings
+  const hasMixed = /[\u0D80-\u0DFF]/.test(unicodeOutput) && /[A-Za-z]/.test(unicodeOutput);
+  if (typerMixedWarning) {
+    typerMixedWarning.hidden = !hasMixed || typerOutputMode === "unicode";
+  }
 }
 
 function setTyperOutputMode(mode: OutputMode): void {
@@ -1219,6 +1246,7 @@ function setTyperOutputMode(mode: OutputMode): void {
   typerCopyButton.textContent = OUTPUT_DETAILS[mode].copy;
   const noteEl = document.querySelector("#format-note");
   if (noteEl) noteEl.textContent = OUTPUT_DETAILS[mode].note;
+  renderTyper();
 }
 
 function setToolPanel(name: "keyboard" | "hints", open: boolean): void {
@@ -1318,6 +1346,44 @@ function renderKeyboard(): void {
 }
 
 typerInput.addEventListener("input", renderTyper);
+
+function setDirectEnglishMode(enabled: boolean): void {
+  directEnglishMode = enabled;
+  btnToggleEnMode?.classList.toggle("active", enabled);
+  if (enModeLabel) enModeLabel.textContent = enabled ? "English" : "Singlish";
+  if (enModeIcon) enModeIcon.textContent = enabled ? "🇬🇧" : "🔤";
+  notify(enabled ? "English Mode Active (Direct Typing)" : "Singlish Mode Active (Phonetic Sinhala)");
+  renderTyper();
+}
+
+btnToggleEnMode?.addEventListener("click", () => setDirectEnglishMode(!directEnglishMode));
+
+btnWrapEn?.addEventListener("click", () => {
+  const start = typerInput.selectionStart;
+  const end = typerInput.selectionEnd;
+  const val = typerInput.value;
+  if (start !== end) {
+    const selected = val.substring(start, end);
+    const replacement = `"${selected}"`;
+    typerInput.value = val.substring(0, start) + replacement + val.substring(end);
+    typerInput.selectionStart = start + 1;
+    typerInput.selectionEnd = end + 1;
+  } else {
+    const replacement = '""';
+    typerInput.value = val.substring(0, start) + replacement + val.substring(end);
+    typerInput.selectionStart = start + 1;
+    typerInput.selectionEnd = start + 1;
+  }
+  typerInput.focus();
+  renderTyper();
+});
+
+typerInput.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.ctrlKey && e.key.toLowerCase() === "e") {
+    e.preventDefault();
+    setDirectEnglishMode(!directEnglishMode);
+  }
+});
 typerUnicodeButton.addEventListener("click", () => setTyperOutputMode("unicode"));
 typerWijeButton.addEventListener("click", () => setTyperOutputMode("wije"));
 typerIsiButton.addEventListener("click", () => setTyperOutputMode("isi"));
@@ -1356,6 +1422,7 @@ const inputGeminiKey = document.querySelector<HTMLInputElement>("#input-gemini-k
 const inputGroqKey = document.querySelector<HTMLInputElement>("#input-groq-key")!;
 const inputOpenaiKey = document.querySelector<HTMLInputElement>("#input-openai-key")!;
 const inputMaxCpl = document.querySelector<HTMLInputElement>("#input-max-cpl")!;
+const inputCustomEnglishWords = document.querySelector<HTMLInputElement>("#input-custom-english-words");
 const btnSaveSettings = document.querySelector<HTMLButtonElement>("#btn-save-settings")!;
 const prefAutoImport = document.querySelector<HTMLInputElement>("#pref-auto-import");
 
@@ -1391,6 +1458,17 @@ inputGeminiKey.value = appSettings.geminiApiKey || "";
 inputGroqKey.value = appSettings.groqApiKey || "";
 inputOpenaiKey.value = appSettings.openaiApiKey || "";
 inputMaxCpl.value = String(appSettings.maxCpl || 38);
+if (inputCustomEnglishWords) {
+  inputCustomEnglishWords.value = (appSettings.customEnglishWords || []).join(", ");
+  inputCustomEnglishWords.addEventListener("input", () => {
+    appSettings.customEnglishWords = inputCustomEnglishWords.value
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
+    saveSettings(appSettings);
+    renderTyper();
+  });
+}
 if (prefAutoImport) prefAutoImport.checked = appSettings.autoImportCaptions === true;
 selectLanguage.value = appSettings.language || "auto";
 selectProvider.value = appSettings.sttProvider || "gemini";
@@ -1417,6 +1495,12 @@ inputOpenaiKey.addEventListener("input", () => {
 
 inputMaxCpl.addEventListener("change", () => {
   appSettings.maxCpl = parseInt(inputMaxCpl.value, 10) || 38;
+  if (inputCustomEnglishWords) {
+    appSettings.customEnglishWords = inputCustomEnglishWords.value
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
+  }
   saveSettings(appSettings);
 });
 

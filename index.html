@@ -154,6 +154,7 @@
                 <span class="select-icon">&#x1F310;</span>
                 <select id="select-language" class="custom-select">
                   <option value="auto" selected>Auto-Detect Language</option>
+                  <option value="si-en">Sinhala + English (Mixed / Singlish)</option>
                   <option value="si">Sinhala (&#x0DC3;&#x0DD2;&#x0D82;&#x0DC4;&#x0DBB;)</option>
                   <option value="en">English</option>
                 </select>
@@ -295,6 +296,12 @@
             </div>
             <textarea id="singlish" spellcheck="false" placeholder="mama ada gedara yanawa"></textarea>
             <div class="typing-tool-buttons" role="group" aria-label="Typing tools">
+              <button id="btn-toggle-en-mode" class="tool-toggle" type="button" title="Toggle between Singlish and English Mode (Ctrl+E)">
+                <span id="en-mode-icon">&#x1F524;</span> <span id="en-mode-label">Singlish</span>
+              </button>
+              <button id="btn-wrap-en" class="tool-toggle" type="button" title="Wrap selection in English quotes (&quot;word&quot;)">
+                <span>+ &quot;En&quot;</span>
+              </button>
               <button id="keyboard-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="keyboard-panel">
                 <span aria-hidden="true">&#x2328;</span> Keyboard
               </button>
@@ -317,15 +324,15 @@
             <div id="hints-panel" class="typing-panel hints-panel" hidden>
               <div class="typing-panel-heading">
                 <strong>Typing hints</strong>
-                <span>Capital letters change some Sinhala sounds.</span>
+                <span>Type Sinhala and English together seamlessly.</span>
               </div>
               <div class="hint-list">
                 <div><code>ka / kaa / kA</code><span>&#x0D9A; / &#x0D9A;&#x0DCF; / &#x0D9A;&#x0DD0;</span></div>
                 <div><code>Ta / Da / Na</code><span>&#x0DA8; / &#x0DAA; / &#x0DAB;</span></div>
                 <div><code>kra / kYa</code><span>&#x0D9A;&#x0DCA;&#x200D;&#x0DBB; / &#x0D9A;&#x0DCA;&#x200D;&#x0DBA;</span></div>
-                <div><code>axka / aN / aH</code><span>&#x0D85;&#x0D82;&#x0D9A; / &#x0D85;&#x0D82; / &#x0D85;&#x0D83;</span></div>
+                <div><code>YouTube / "video"</code><span>YouTube / "video"</span></div>
               </div>
-              <p class="hint-note">Use braces to preserve English text, for example <code>{Premiere Pro}</code>. Everything is converted locally on this computer.</p>
+              <p class="hint-note">English brand names (<code>YouTube</code>, <code>TikTok</code>, <code>iPhone</code>), loanwords (<code>channel</code>, <code>edit</code>, <code>subscribe</code>), and words in <code>"quotes"</code> or <code>{braces}</code> stay in English. Press <strong>Ctrl+E</strong> to toggle English mode.</p>
             </div>
           </section>
         </div>
@@ -351,6 +358,9 @@
             </div>
             <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
             <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
+            <div id="typer-mixed-warning" class="mixed-font-alert" hidden>
+              &#x26A0;&#xFE0F; <strong>Mixed English+Sinhala:</strong> Legacy fonts (Wije/ISI) cannot display English characters. For mixed text, <strong>Unicode</strong> is recommended.
+            </div>
           </section>
           <div class="typer-actions-row form-grid-2">
             <button id="copy" class="primary-btn copy-action" type="button">Copy Unicode</button>
@@ -514,6 +524,7 @@
                 <span class="select-icon">&#x1F310;</span>
                 <select id="settings-language-select" class="custom-select">
                   <option value="si" selected>Sinhala (&#x0DC3;&#x0DD2;&#x0D82;&#x0DC4;&#x0DBB;)</option>
+                  <option value="si-en">Sinhala + English (Mixed / Singlish)</option>
                   <option value="auto">Auto-Detect Language</option>
                   <option value="en">English</option>
                 </select>
@@ -524,6 +535,12 @@
               <label for="input-max-cpl">Max Characters Per Line</label>
               <input type="number" id="input-max-cpl" class="text-input" min="15" max="80" value="38" />
             </div>
+          </div>
+
+          <div class="settings-field full-width" style="margin-top: 10px;">
+            <label for="input-custom-english-words">Custom English Words (Never Transliterate)</label>
+            <input type="text" id="input-custom-english-words" class="text-input" placeholder="e.g. AutoCap, Premiere, Vlog, BrandName (comma-separated)" />
+            <p class="preview-note">&#x1F4A1; These words will always remain in English when typing or transcribing.</p>
           </div>
         </div>
 

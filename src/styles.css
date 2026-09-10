@@ -1662,3 +1662,25 @@ textarea#singlish:focus {
   justify-content: center;
   gap: 6px;
 }
+
+/* ==========================================================================
+   English + Sinhala Dual-Language Typing Styles
+   ========================================================================== */
+#btn-toggle-en-mode.active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #34d399;
+  font-weight: 600;
+}
+
+.mixed-font-alert {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 1.4;
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}

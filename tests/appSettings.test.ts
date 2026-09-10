@@ -38,5 +38,16 @@ describe("AppSettings multi-tier storage", () => {
     const check = loadSettings();
     expect(check.geminiApiKey).toBe("AIzaSyPermanentKey");
   });
+
+  it("saves and reloads si-en mixed language choice and custom English words", () => {
+    const settings = loadSettings();
+    settings.language = "si-en";
+    settings.customEnglishWords = ["AutoCap", "PremierePro", "Vlog"];
+    saveSettings(settings);
+
+    const check = loadSettings();
+    expect(check.language).toBe("si-en");
+    expect(check.customEnglishWords).toEqual(["AutoCap", "PremierePro", "Vlog"]);
+  });
 });
 

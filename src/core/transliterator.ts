@@ -1,9 +1,52 @@
 export interface TransliterationOptions {
   dictionary?: Record<string, string>;
   preserveEnglish?: boolean;
+  preserveCommonEnglishWords?: boolean;
+  customEnglishWords?: string[];
 }
 
 import { SINHALA_UNICODE as U } from "./unicodeMapping";
+
+/**
+ * Curated list of common English loanwords, technical terms, and creator vocabulary
+ * frequently typed alongside Sinhala in video editing and social media.
+ */
+export const COMMON_ENGLISH_WORDS = new Set<string>([
+  // Social Media & Web Platforms
+  "youtube", "facebook", "instagram", "tiktok", "whatsapp", "twitter", "telegram",
+  "google", "gmail", "email", "chatgpt", "ai", "app", "website", "web", "online",
+  "internet", "wifi", "link", "post", "story", "reels", "shorts", "page", "group",
+  "account", "profile", "channel", "subscribe", "subscribers", "subscriber", "sub",
+  "like", "likes", "comment", "comments", "share", "view", "views", "follower",
+  "followers", "bell", "icon", "notification", "notifications", "creator", "feed",
+  // Video & Audio Production
+  "audio", "clip", "clips", "sound", "music", "voice", "mic", "microphone",
+  "camera", "lens", "zoom", "photo", "image", "pic", "picture", "screen", "record", "recording",
+  "edit", "editing", "editor", "cut", "trim", "render", "rendering", "export", "exporting",
+  "import", "importing", "timeline", "track", "layer", "effect", "effects", "transition",
+  "transitions", "preset", "presets", "mogrt", "template", "templates", "title", "titles",
+  "caption", "captions", "subtitle", "subtitles", "font", "fonts", "color", "colour",
+  "grade", "grading", "lut", "luts", "intro", "outro", "logo", "banner", "thumbnail",
+  "thumbnails", "vlog", "vlogger", "stream", "streaming", "live", "fps", "resolution",
+  "sync", "frame", "frames", "playback", "sequence", "project", "file", "files",
+  // Software & Hardware
+  "premiere", "photoshop", "aftereffects", "illustrator", "audition", "davinci", "capcut",
+  "pc", "laptop", "computer", "mac", "windows", "drive", "folder", "folders", "storage",
+  "ssd", "ram", "cpu", "gpu", "battery", "charger", "phone", "mobile", "display",
+  "monitor", "keyboard", "mouse", "headphone", "headphones", "earbuds", "speaker",
+  "bluetooth", "usb", "device", "setup",
+  // Creator Common Speech & Expressions
+  "hello", "hi", "hey", "welcome", "bye", "okay", "ok", "cool", "super", "good",
+  "bad", "best", "top", "new", "update", "updates", "tutorial", "tutorials", "guide",
+  "tips", "tricks", "review", "unboxing", "challenge", "part", "episode", "season",
+  "series", "class", "course", "lesson", "exam", "test", "office", "work", "job",
+  "company", "business", "call", "message", "sms", "number", "price", "cost", "free",
+  "discount", "offer", "shop", "store", "buy", "sell", "order", "delivery", "cash",
+  "card", "payment", "bank", "pass", "fail", "winner", "win", "game", "gaming",
+  "play", "player", "match", "team", "club", "party", "event", "birthday", "friend",
+  "friends", "family", "doctor", "hospital", "school", "campus", "university",
+  "check", "click", "download", "upload", "join", "start", "stop", "next", "done"
+]);
 
 const WORDS: Record<string, string> = {
   mama: "මම", ada: "අද", api: "අපි", oya: "ඔයා", oyaa: "ඔයා", oyata: "ඔයාට",
@@ -108,6 +151,23 @@ const consonants = Object.keys(CONSONANTS).sort((a, b) => b.length - a.length);
 const caseConsonants = ["GN", "KN", "Ch", "Th", "Dh", "Sh", "G", "T", "D", "N", "B", "L"];
 const allCapsToken = /^[A-Z]{2,}$/;
 const titleCaseToken = /^[A-Z][a-z]+(?:['-][A-Za-z]+)*$/;
+
+/**
+ * Recognizes CamelCase and PascalCase English words with interior capitals
+ * (e.g. YouTube, ChatGPT, AutoCap, TikTok, iPhone, WhatsApp, PremierePro).
+ * Guarantees length >= 4 and avoids 2-3 char Sinhala vowel/cluster aliases (kA, krA, kYa, etc.).
+ */
+function isMixedCaseEnglishWord(word: string): boolean {
+  if (word.length < 4) return false;
+  const hasCamelPattern =
+    /^[a-z]+[A-Z][A-Za-z0-9]+$/.test(word) ||
+    /^[A-Z][a-z]+[A-Z][A-Za-z0-9]*$/.test(word) ||
+    /^[A-Z]{2,}[a-z]+[A-Z0-9]*$/.test(word);
+  if (!hasCamelPattern) return false;
+  if (/[a-z](?:A|Aa|I|R|RR|LR|LRR)$/.test(word)) return false;
+  return true;
+}
+
 const zeroWidthJoiner = "\u200D";
 
 function matchAt(input: string, index: number, candidates: string[]): string | undefined {
@@ -185,33 +245,61 @@ function phoneticWord(word: string): string {
   return output;
 }
 
-function convertPlainWord(word: string, dictionary: Record<string, string>, preserveEnglish: boolean): string {
+function convertPlainWord(
+  word: string,
+  dictionary: Record<string, string>,
+  preserveEnglish: boolean,
+  commonEnglishWords?: Set<string>,
+  customEnglishWords?: Set<string>
+): string {
   const key = word.toLowerCase();
   if (CASE_SENSITIVE_WORDS[word]) return CASE_SENSITIVE_WORDS[word];
   if (isCaseAliasSyllable(word)) return phoneticWord(word);
-  if (preserveEnglish && allCapsToken.test(word)) return word;
+  if (preserveEnglish && (allCapsToken.test(word) || isMixedCaseEnglishWord(word))) return word;
+  if (customEnglishWords?.has(key)) return word;
   if (dictionary[key]) return dictionary[key];
+  if (preserveEnglish && commonEnglishWords?.has(key)) return word;
   if (preserveEnglish && titleCaseToken.test(word)) return word;
-  if (!preserveEnglish && (allCapsToken.test(word) || titleCaseToken.test(word))) return phoneticWord(key);
+  if (!preserveEnglish && (allCapsToken.test(word) || titleCaseToken.test(word) || isMixedCaseEnglishWord(word))) {
+    return phoneticWord(key);
+  }
   return phoneticWord(word);
 }
 
 export function transliterate(input: string, options: TransliterationOptions = {}): string {
   const dictionary = { ...WORDS, ...PHONETIC_WORDS, ...(options.dictionary ?? {}) };
   const preserveEnglish = options.preserveEnglish ?? true;
+  const preserveCommonEnglish = options.preserveCommonEnglishWords ?? true;
+  const customEnglishWords =
+    options.customEnglishWords && options.customEnglishWords.length > 0
+      ? new Set(options.customEnglishWords.map((w) => w.toLowerCase().trim()).filter(Boolean))
+      : undefined;
+  const commonEnglishWords = preserveCommonEnglish ? COMMON_ENGLISH_WORDS : undefined;
+
   const locked: string[] = [];
   const protect = (value: string) => `\uE000${locked.push(value) - 1}\uE001`;
   const safe = input
-    .replace(/\{([^{}]+)\}/g, (_, value: string) => protect(value))
+    // Delimiters for explicit English word/phrase preservation
+    .replace(/\{([^{}\n]+)\}/g, (_, value: string) => protect(value))
+    .replace(/`([^`\n]+)`/g, (_, value: string) => protect(value))
+    .replace(/\[([^[\]\n]+)\]/g, (_, value: string) => protect(value))
+    .replace(/"([^"\n]+)"/g, (_, value: string) => protect(`"${value}"`))
+    .replace(/(^|[\s(])'([^'\n]+)'(?=$|[\s),.!?])/g, (_, prefix: string, value: string) => `${prefix}${protect(`'${value}'`)}`)
+    // Special Sinhala escapes
     .replace(/a\\n/g, () => protect("\u0D85\u0D82"))
     .replace(/a\\h/g, () => protect("\u0D85\u0D83"))
     .replace(/\\N/g, () => protect(U.consonants.nng))
     .replace(/\\R/g, () => protect("\u0D8D"))
     .replace(/\\r(?=[A-Za-z])/g, () => protect(U.consonants.r + U.signs.virama + zeroWidthJoiner))
+    // Explicit backslash escaped single word (e.g. \video -> video)
+    .replace(/\\([A-Za-z]+)/g, (_, value: string) => protect(value))
     .replace(/https?:\/\/[^\s\uE000]+|www\.[^\s\uE000]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b(?:\d+[A-Za-z]+|[A-Za-z]+\d+[A-Za-z0-9]*)\b/g, protect);
+
   const result = safe.replace(/[A-Za-z]+(?:['-][A-Za-z]+)*|\uE000\d+\uE001/g, (token) => {
     const lock = token.match(/^\uE000(\d+)\uE001$/);
-    return lock ? locked[Number(lock[1])] : convertPlainWord(token, dictionary, preserveEnglish);
+    return lock
+      ? locked[Number(lock[1])]
+      : convertPlainWord(token, dictionary, preserveEnglish, commonEnglishWords, customEnglishWords);
   });
   return result.normalize("NFC");
 }

@@ -10,6 +10,7 @@ AutoCap also includes a built-in Sinhala Typer with dictionary-first Singlish tr
 - **Hybrid Desktop Architecture**: Local Media Worker companion daemon (`workerServer.ts`) on port 48128 with zero-configuration fallback to built-in VAD chunking.
 - **Gemini Files API for Large Media**: Automatic resumable binary upload for audio files $\ge 4\text{ MB}$, eliminating Base64 payload bottlenecks.
 - **Premiere Pro Timeline Integration**: Direct timeline placement onto caption tracks plus project bin import (`app.project.importFiles`).
+- **Styled Caption Graphics**: Bulk MOGRT placement with cue-accurate timing and template-exposed font, size, color, position, stroke, shadow, background, alignment, and animation controls. See [MOGRT_CAPTION_TEMPLATE.md](MOGRT_CAPTION_TEMPLATE.md).
 - **Triple Font Encoding for Subtitles**: Instant toggle between modern **Unicode**, **Wije font** (DL-Manel), and **ISI font** (FM-Abhaya / IsiBasuru) encodings.
 - **Smart Subtitle Editor**: Live timing edits, per-caption AI retry (`[🔄]`), Undo/Redo history stack, batch Find & Replace, timing overlap auto-repair, and auto-split by CPL.
 - **Live Readability & Reading Speed Meter**: Real-time Characters Per Line (CPL) and Characters Per Second (CPS) metrics with visual pacing warnings.

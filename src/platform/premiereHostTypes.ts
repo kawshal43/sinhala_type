@@ -77,6 +77,72 @@ export interface MOGRTInsertionRequest {
   targetVideoTrackIndex: number;
   durationSec: number;
   playheadTimeSec?: number;
+  style?: GraphicStyleOptions;
+}
+
+export type GraphicInsertionMode = "add" | "replace" | "timing-only";
+
+export interface GraphicStyleOptions {
+  fontFamily?: string;
+  fontSize?: number;
+  fillColor?: string;
+  positionX?: number;
+  positionY?: number;
+  alignment?: "left" | "center" | "right";
+  strokeWidth?: number;
+  shadowEnabled?: boolean;
+  backgroundEnabled?: boolean;
+  animation?: "none" | "fade" | "pop" | "slide-up";
+  animationDuration?: number;
+}
+
+export interface CaptionGraphicsRequest {
+  sequenceId: string;
+  timelineStartSec: number;
+  templatePath?: string;
+  encoding?: "unicode" | "wije" | "isi";
+  targetVideoTrackIndex: number;
+  cues: SubtitleCue[];
+  style?: GraphicStyleOptions;
+  mode?: GraphicInsertionMode;
+}
+
+export interface GraphicBatchRequest {
+  sequenceId: string;
+  timelineStartSec: number;
+  templatePath?: string;
+  targetVideoTrackIndex: number;
+  batchStartIndex: number;
+  totalCues: number;
+  cues: SubtitleCue[];
+  style?: GraphicStyleOptions;
+  mode?: GraphicInsertionMode;
+}
+
+export interface GraphicBatchResult {
+  success: boolean;
+  mode?: GraphicInsertionMode;
+  batchInserted?: number;
+  batchStartIndex?: number;
+  appliedProperties?: string[];
+  missingProperties?: string[];
+  message?: string;
+  code?: string;
+}
+
+export interface ChunkedGraphicsProgress {
+  inserted: number;
+  total: number;
+  percentage: number;
+  currentBatch: number;
+  totalBatches: number;
+  statusText: string;
+}
+
+export interface ChunkedGraphicsOptions {
+  batchSize?: number;
+  onProgress?: (progress: ChunkedGraphicsProgress) => void;
+  signal?: AbortSignal;
 }
 
 export interface MOGRTInsertionResult {
@@ -85,6 +151,10 @@ export interface MOGRTInsertionResult {
   code?: string;
   trackItemName?: string;
   appliedText?: string;
+  insertedCount?: number;
+  requestedCount?: number;
+  appliedProperties?: string[];
+  missingProperties?: string[];
 }
 
 export interface HostRpcResponse<T = any> {
@@ -96,4 +166,3 @@ export interface HostRpcResponse<T = any> {
     details?: any;
   };
 }
-

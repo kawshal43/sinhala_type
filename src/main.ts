@@ -25,6 +25,7 @@ import {
   convertCaptionText,
   convertSubtitleCues,
   getSinhalaFontTestSamples,
+  hasMixedEnglishAndSinhala,
   isSinhalaText,
   type CaptionEncoding
 } from "./core/subtitles/captionConverter";
@@ -59,7 +60,7 @@ import { premiereAudioClient } from "./platform/premiereAudio";
 import { premiereGraphicsClient } from "./platform/premiereGraphics";
 import { premiereCaptionsClient } from "./platform/premiereCaptions";
 import { temporaryMedia } from "./services/temporaryMedia";
-import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest } from "./platform/premiereHostTypes";
+import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest, GraphicStyleOptions } from "./platform/premiereHostTypes";
 import {
   loadSettings,
   saveSettings,
@@ -260,15 +261,47 @@ const detectedLangPill = $("#detected-lang-pill");
 const sinhalaTestBox = $("#sinhala-test-box");
 const sinhalaTestChips = $("#sinhala-test-chips");
 const cueListEl = $("#cue-list");
-
-const subModeUnicode = $("#sub-mode-unicode") as HTMLButtonElement;
-const subModeWije = $("#sub-mode-wije") as HTMLButtonElement;
-const subModeIsi = $("#sub-mode-isi") as HTMLButtonElement;
-
 const btnImportPremiere = $("#btn-import-premiere") as HTMLButtonElement;
 const btnExportSrt = $("#btn-export-srt") as HTMLButtonElement;
 const btnExportVtt = $("#btn-export-vtt") as HTMLButtonElement;
 const btnCopySrt = $("#btn-copy-srt") as HTMLButtonElement;
+
+// Output mode & editable graphics drawer
+const outputModeNative = $("#output-mode-native") as HTMLInputElement;
+const outputModeGraphics = $("#output-mode-graphics") as HTMLInputElement;
+const captionGraphicsDrawer = $("#caption-graphics-drawer");
+const premiereBtnIcon = $("#premiere-btn-icon");
+const premiereBtnText = $("#premiere-btn-text");
+
+const captionGraphicFont = $("#caption-graphic-font") as HTMLInputElement;
+const captionGraphicSize = $("#caption-graphic-size") as HTMLInputElement;
+const captionGraphicColor = $("#caption-graphic-color") as HTMLInputElement;
+const captionGraphicPositionPreset = $("#caption-graphic-position-preset") as HTMLSelectElement;
+const customCoordsContainer = $("#custom-coords-container");
+const captionGraphicX = $("#caption-graphic-x") as HTMLInputElement;
+const captionGraphicY = $("#caption-graphic-y") as HTMLInputElement;
+const captionGraphicAlign = $("#caption-graphic-align") as HTMLSelectElement;
+const captionGraphicAnimation = $("#caption-graphic-animation") as HTMLSelectElement;
+const captionGraphicTrack = $("#caption-graphic-track") as HTMLSelectElement;
+const captionGraphicMode = $("#caption-graphic-mode") as HTMLSelectElement;
+const captionGraphicStrokeToggle = $("#caption-graphic-stroke-toggle") as HTMLInputElement;
+const captionGraphicShadow = $("#caption-graphic-shadow") as HTMLInputElement;
+const captionGraphicBackground = $("#caption-graphic-background") as HTMLInputElement;
+
+const graphicInsertionProgress = $("#graphic-insertion-progress");
+const graphicProgressFill = $("#graphic-progress-fill");
+const graphicProgressText = $("#graphic-progress-text");
+const btnCancelGraphicInsertion = $("#btn-cancel-graphic-insertion") as HTMLButtonElement;
+
+// Advanced settings custom MOGRT override
+const inputCustomMogrtOverride = $("#input-custom-mogrt-override") as HTMLInputElement;
+const btnBrowseAdvancedMogrt = $("#btn-browse-advanced-mogrt") as HTMLButtonElement;
+const btnResetAdvancedMogrt = $("#btn-reset-advanced-mogrt") as HTMLButtonElement;
+const advancedMogrtFile = $("#advanced-mogrt-file") as HTMLInputElement;
+
+const subModeUnicode = $("#sub-mode-unicode") as HTMLButtonElement;
+const subModeWije = $("#sub-mode-wije") as HTMLButtonElement;
+const subModeIsi = $("#sub-mode-isi") as HTMLButtonElement;
 
 const btnUndoCue = $("#btn-undo-cue") as HTMLButtonElement;
 const btnRedoCue = $("#btn-redo-cue") as HTMLButtonElement;
@@ -926,9 +959,9 @@ function buildCueCard(cue: SubtitleCue, idx: number): HTMLElement {
   // Text Area with Sinhala font preview
   const textArea = document.createElement("textarea");
   textArea.className = "cue-text-input";
-  if (subtitleEncoding === "wije") textArea.classList.add("font-wije");
-  else if (subtitleEncoding === "isi") textArea.classList.add("font-isi");
-  textArea.value = convertCaptionText(cue.text, subtitleEncoding);
+  // Keep the editable source in Unicode. Legacy conversion is an output-only step;
+  // writing converted text back here would corrupt it on the next export.
+  textArea.value = cue.text;
 
   textArea.addEventListener("click", () => {
     copySingleCue(cue, card, idx);
@@ -1124,7 +1157,244 @@ async function importCurrentCaptions(): Promise<void> {
   }
 }
 
-btnImportPremiere.addEventListener("click", () => { void importCurrentCaptions(); });
+type SavedGraphicOptions = {
+  outputFormat?: "native" | "graphics";
+  track?: number;
+  mode?: "add" | "replace" | "timing-only";
+  positionPreset?: string;
+  style?: GraphicStyleOptions;
+  strokeEnabled?: boolean;
+  customMogrtPath?: string;
+};
+const GRAPHIC_OPTIONS_KEY = "autocap.captionGraphics.v2";
+
+function numberValue(selector: string, fallback: number): number {
+  const el = $(selector) as HTMLInputElement;
+  if (!el) return fallback;
+  const value = Number(el.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readGraphicStyle(): GraphicStyleOptions {
+  const strokeOn = captionGraphicStrokeToggle?.checked ?? true;
+  return {
+    fontFamily: captionGraphicFont.value.trim() || "Noto Sans Sinhala",
+    fontSize: numberValue("#caption-graphic-size", 64),
+    fillColor: captionGraphicColor.value || "#ffffff",
+    positionX: numberValue("#caption-graphic-x", 960),
+    positionY: numberValue("#caption-graphic-y", 930),
+    alignment: (captionGraphicAlign.value as GraphicStyleOptions["alignment"]) || "center",
+    strokeWidth: strokeOn ? numberValue("#caption-graphic-stroke", 3) : 0,
+    shadowEnabled: captionGraphicShadow.checked,
+    backgroundEnabled: captionGraphicBackground.checked,
+    animation: (captionGraphicAnimation.value as GraphicStyleOptions["animation"]) || "fade"
+  };
+}
+
+function saveGraphicOptions(): void {
+  try {
+    const data: SavedGraphicOptions = {
+      outputFormat: outputModeGraphics.checked ? "graphics" : "native",
+      track: numberValue("#caption-graphic-track", 2),
+      mode: (captionGraphicMode.value as any) || "add",
+      positionPreset: captionGraphicPositionPreset.value || "bottom",
+      style: readGraphicStyle(),
+      strokeEnabled: captionGraphicStrokeToggle?.checked ?? true,
+      customMogrtPath: inputCustomMogrtOverride?.value.trim() || ""
+    };
+    localStorage.setItem(GRAPHIC_OPTIONS_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+function loadGraphicOptions(): void {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GRAPHIC_OPTIONS_KEY) || "null") as SavedGraphicOptions | null;
+    if (!saved) return;
+    if (saved.outputFormat === "graphics") {
+      outputModeGraphics.checked = true;
+    } else {
+      outputModeNative.checked = true;
+    }
+    updateOutputModeUI();
+
+    if (typeof saved.track === "number") captionGraphicTrack.value = String(saved.track);
+    if (saved.mode) captionGraphicMode.value = saved.mode;
+    if (saved.positionPreset) {
+      captionGraphicPositionPreset.value = saved.positionPreset;
+      customCoordsContainer.hidden = saved.positionPreset !== "custom";
+    }
+
+    if (saved.style?.fontFamily) captionGraphicFont.value = saved.style.fontFamily;
+    if (saved.style?.fontSize) captionGraphicSize.value = String(saved.style.fontSize);
+    if (saved.style?.fillColor) captionGraphicColor.value = saved.style.fillColor;
+    if (saved.style?.positionX !== undefined) captionGraphicX.value = String(saved.style.positionX);
+    if (saved.style?.positionY !== undefined) captionGraphicY.value = String(saved.style.positionY);
+    if (saved.style?.alignment) captionGraphicAlign.value = saved.style.alignment;
+    if (saved.style?.animation) captionGraphicAnimation.value = saved.style.animation;
+
+    if (saved.strokeEnabled !== undefined && captionGraphicStrokeToggle) {
+      captionGraphicStrokeToggle.checked = saved.strokeEnabled;
+    }
+    if (saved.style?.shadowEnabled !== undefined) captionGraphicShadow.checked = saved.style.shadowEnabled;
+    if (saved.style?.backgroundEnabled !== undefined) captionGraphicBackground.checked = saved.style.backgroundEnabled;
+
+    if (saved.customMogrtPath && inputCustomMogrtOverride) {
+      inputCustomMogrtOverride.value = saved.customMogrtPath;
+    }
+  } catch {}
+}
+
+function updateOutputModeUI(): void {
+  const isGraphics = outputModeGraphics.checked;
+  captionGraphicsDrawer.hidden = !isGraphics;
+  premiereBtnIcon.textContent = isGraphics ? "✨" : "🎬";
+  premiereBtnText.textContent = isGraphics ? "Add Graphic Clips to Premiere" : "Import to Premiere";
+}
+
+outputModeNative.addEventListener("change", () => {
+  updateOutputModeUI();
+  saveGraphicOptions();
+});
+
+outputModeGraphics.addEventListener("change", () => {
+  updateOutputModeUI();
+  saveGraphicOptions();
+});
+
+captionGraphicPositionPreset.addEventListener("change", () => {
+  const preset = captionGraphicPositionPreset.value;
+  if (preset === "bottom") {
+    captionGraphicX.value = "960";
+    captionGraphicY.value = "930";
+    customCoordsContainer.hidden = true;
+  } else if (preset === "center") {
+    captionGraphicX.value = "960";
+    captionGraphicY.value = "540";
+    customCoordsContainer.hidden = true;
+  } else if (preset === "top") {
+    captionGraphicX.value = "960";
+    captionGraphicY.value = "150";
+    customCoordsContainer.hidden = true;
+  } else if (preset === "custom") {
+    customCoordsContainer.hidden = false;
+  }
+  saveGraphicOptions();
+});
+
+[
+  captionGraphicFont,
+  captionGraphicSize,
+  captionGraphicColor,
+  captionGraphicX,
+  captionGraphicY,
+  captionGraphicAlign,
+  captionGraphicAnimation,
+  captionGraphicTrack,
+  captionGraphicMode,
+  captionGraphicStrokeToggle,
+  captionGraphicShadow,
+  captionGraphicBackground
+].forEach((el) => {
+  el?.addEventListener("change", saveGraphicOptions);
+});
+
+let activeGraphicsAbortController: AbortController | null = null;
+
+async function insertCurrentCaptionsAsGraphics(): Promise<void> {
+  if (!currentCues.length) return notify("No captions to insert as graphics.", true);
+  const mixed = currentCues.some((cue) => hasMixedEnglishAndSinhala(cue.text));
+  const encoding: CaptionEncoding = mixed ? "unicode" : subtitleEncoding;
+  if (mixed && subtitleEncoding !== "unicode") {
+    setSubtitleEncoding("unicode");
+    notify("Mixed Sinhala + English captions require Unicode; output was switched to Unicode.");
+  }
+
+  btnImportPremiere.disabled = true;
+  graphicInsertionProgress.hidden = false;
+  graphicProgressFill.style.width = "0%";
+  graphicProgressText.textContent = `Preparing graphics (0 of ${currentCues.length})...`;
+
+  activeGraphicsAbortController = new AbortController();
+  saveGraphicOptions();
+
+  try {
+    const sequence = await inspectTimeline();
+    const customTemplate = inputCustomMogrtOverride?.value.trim() || undefined;
+
+    const result = await premiereGraphicsClient.insertAllCaptionGraphicsChunked(
+      {
+        sequenceId: timelineDocument?.sequenceId || sequence.sequenceId,
+        timelineStartSec: timelineDocument?.timelineStartSec || 0,
+        templatePath: customTemplate,
+        encoding,
+        targetVideoTrackIndex: numberValue("#caption-graphic-track", 2),
+        cues: currentCues,
+        style: readGraphicStyle(),
+        mode: (captionGraphicMode.value as any) || "add"
+      },
+      {
+        batchSize: 8,
+        signal: activeGraphicsAbortController.signal,
+        onProgress: (p) => {
+          graphicProgressFill.style.width = `${p.percentage}%`;
+          graphicProgressText.textContent = p.statusText;
+        }
+      }
+    );
+
+    if (result.success) {
+      graphicProgressFill.style.width = "100%";
+      graphicProgressText.textContent = `✓ Done: ${result.insertedCount} graphics inserted!`;
+      notify(result.message, false);
+      setTimeout(() => {
+        if (!activeGraphicsAbortController) {
+          graphicInsertionProgress.hidden = true;
+        }
+      }, 3500);
+    } else {
+      graphicProgressText.textContent = result.message;
+      notify(result.message, true);
+    }
+  } catch (error: any) {
+    const message = error?.message || "Graphics insertion failed.";
+    graphicProgressText.textContent = message;
+    notify(message, true);
+  } finally {
+    btnImportPremiere.disabled = false;
+    activeGraphicsAbortController = null;
+  }
+}
+
+btnCancelGraphicInsertion.addEventListener("click", () => {
+  if (activeGraphicsAbortController) {
+    activeGraphicsAbortController.abort();
+    graphicProgressText.textContent = "Cancelling insertion...";
+  }
+});
+
+btnImportPremiere.addEventListener("click", () => {
+  if (outputModeGraphics.checked) {
+    void insertCurrentCaptionsAsGraphics();
+  } else {
+    void importCurrentCaptions();
+  }
+});
+
+// Advanced settings custom MOGRT override handlers
+btnBrowseAdvancedMogrt?.addEventListener("click", () => advancedMogrtFile?.click());
+advancedMogrtFile?.addEventListener("change", () => {
+  const file = advancedMogrtFile.files?.[0] as (File & { path?: string }) | undefined;
+  if (!file) return;
+  inputCustomMogrtOverride.value = file.path || file.name;
+  saveGraphicOptions();
+});
+btnResetAdvancedMogrt?.addEventListener("click", () => {
+  if (inputCustomMogrtOverride) inputCustomMogrtOverride.value = "";
+  saveGraphicOptions();
+  notify("Reset to default bundled AutoCapCaption.mogrt");
+});
+
+loadGraphicOptions();
 
 btnExportSrt.addEventListener("click", async () => {
   if (currentCues.length === 0) return notify("No captions to export.", true);
@@ -1469,6 +1739,9 @@ if (inputCustomEnglishWords) {
     renderTyper();
   });
 }
+if (inputCustomMogrtOverride && appSettings.customMogrtPath) {
+  inputCustomMogrtOverride.value = appSettings.customMogrtPath;
+}
 if (prefAutoImport) prefAutoImport.checked = appSettings.autoImportCaptions === true;
 selectLanguage.value = appSettings.language || "auto";
 selectProvider.value = appSettings.sttProvider || "gemini";
@@ -1575,7 +1848,9 @@ btnSaveSettings.addEventListener("click", () => {
   appSettings.groqApiKey = inputGroqKey.value.trim();
   appSettings.openaiApiKey = inputOpenaiKey.value.trim();
   appSettings.maxCpl = parseInt(inputMaxCpl.value, 10) || 38;
+  if (inputCustomMogrtOverride) appSettings.customMogrtPath = inputCustomMogrtOverride.value.trim();
   saveSettings(appSettings);
+  saveGraphicOptions();
   updateKeyBadges();
 
   btnSaveSettings.textContent = "✓ Saved Permanently!";

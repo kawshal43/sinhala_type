@@ -41,6 +41,20 @@ function premiereUxpBundle(): Plugin {
         cpSync(jsxSource, jsxDest, { recursive: true, force: true });
       }
 
+      // Copy bundled assets (AutoCapCaption.mogrt and fonts)
+      const assetsSource = resolve("cep", "AutoCap", "assets");
+      if (existsSync(assetsSource)) {
+        const assetsDest = resolve(outputDirectory, "assets");
+        mkdirSync(assetsDest, { recursive: true });
+        cpSync(assetsSource, assetsDest, { recursive: true, force: true });
+      }
+      const fontsSource = resolve("cep", "AutoCap", "assets", "fonts");
+      if (existsSync(fontsSource)) {
+        const fontsDest = resolve(outputDirectory, "fonts");
+        mkdirSync(fontsDest, { recursive: true });
+        cpSync(fontsSource, fontsDest, { recursive: true, force: true });
+      }
+
       const cepOutputDirectory = resolve("cep", "AutoCap", "dist");
       rmSync(cepOutputDirectory, { recursive: true, force: true });
       cpSync(outputDirectory, cepOutputDirectory, { recursive: true, force: true });

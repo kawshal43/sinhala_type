@@ -13,6 +13,7 @@ export interface AppSettings {
   autoImportCaptions?: boolean;
   customEnglishWords?: string[];
   preserveEnglishLoanwords?: boolean;
+  customMogrtPath?: string;
 }
 
 const SETTINGS_KEY = "autocap.settings.v1";
@@ -27,7 +28,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxCpl: 38,
   autoImportCaptions: false,
   customEnglishWords: [],
-  preserveEnglishLoanwords: true
+  preserveEnglishLoanwords: true,
+  customMogrtPath: ""
 };
 
 // In-memory cache fallback

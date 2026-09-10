@@ -61,6 +61,31 @@ try {
   Copy-Item -Path "$SourceRoot\*" -Destination $destinationRoot -Recurse -Force
   Write-Host "[OK] Extension files installed to: $destinationRoot" -ForegroundColor Green
 
+  # 3b. Install bundled mixed-language fonts (Noto Sans Sinhala) into Windows user fonts
+  $userFontsDir = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "Microsoft\Windows\Fonts"
+  if (-not (Test-Path -LiteralPath $userFontsDir)) {
+    New-Item -ItemType Directory -Path $userFontsDir -Force | Out-Null
+  }
+  $fontCandidates = @(
+    (Join-Path $destinationRoot "assets\fonts"),
+    (Join-Path $SourceRoot "assets\fonts"),
+    (Join-Path (Split-Path $SourceRoot -Parent) "public\fonts")
+  )
+  foreach ($fc in $fontCandidates) {
+    if (Test-Path -LiteralPath $fc) {
+      Get-ChildItem -Path $fc -Filter "*.ttf" -ErrorAction SilentlyContinue | ForEach-Object {
+        $destFont = Join-Path $userFontsDir $_.Name
+        if (-not (Test-Path -LiteralPath $destFont)) {
+          Copy-Item -Path $_.FullName -Destination $destFont -Force
+          $fontName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name) + " (TrueType)"
+          New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $fontName -Value $destFont -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+      }
+      break
+    }
+  }
+  Write-Host "[OK] Verified mixed-language Sinhala fonts in Windows user fonts." -ForegroundColor Green
+
   # 4. Enable PlayerDebugMode for all CSXS versions (allows unsigned extensions to run)
   foreach ($csxsVer in @("9", "10", "11", "12", "13", "14", "15", "16")) {
     $regPath = "HKCU:\Software\Adobe\CSXS.$csxsVer"

@@ -13,6 +13,16 @@ export function isSinhalaText(text: string): boolean {
 }
 
 /**
+ * Checks if a string contains both English Latin characters and Sinhala Unicode characters.
+ */
+export function hasMixedEnglishAndSinhala(text: string): boolean {
+  if (!text) return false;
+  const hasSinhala = /[\u0D80-\u0DFF]/.test(text);
+  const hasEnglish = /[A-Za-z]/.test(text);
+  return hasSinhala && hasEnglish;
+}
+
+/**
  * Converts a single text string from Unicode Sinhala to target encoding.
  */
 export function convertCaptionText(text: string, targetEncoding: CaptionEncoding): string {

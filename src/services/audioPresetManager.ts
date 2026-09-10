@@ -25,6 +25,31 @@ export interface PresetInfo {
   formatSuggestion: string;
 }
 
+export interface PresetValidation {
+  valid: boolean;
+  reason?: string;
+}
+
+/** Premiere's direct exporter requires the output extension to match the EPR.
+ * AutoCap writes WAV files, so only audio-only Waveform Audio presets qualify.
+ */
+export function validateWavPresetContent(content: string): PresetValidation {
+  if (!/<DoAudio>\s*true\s*<\/DoAudio>/i.test(content)) {
+    return { valid: false, reason: "The preset does not have audio export enabled." };
+  }
+  if (!/<DoVideo>\s*false\s*<\/DoVideo>/i.test(content)) {
+    return { valid: false, reason: "The preset includes video. Create an audio-only Waveform Audio preset." };
+  }
+
+  const isWaveform =
+    /<ExporterFileType>\s*1463899717\s*<\/ExporterFileType>/i.test(content) || // FourCC WAVE
+    /waveform|wave audio|\bwave\b|\bpcm\b/i.test(content);
+  if (!isWaveform || /<ParamAuxValue>\s*AAC\s*<\/ParamAuxValue>/i.test(content)) {
+    return { valid: false, reason: "The preset is not Waveform Audio (WAV/PCM)." };
+  }
+  return { valid: true };
+}
+
 export class AudioPresetManager {
   /**
    * Scans known Premiere Pro and Adobe Media Encoder preset directories
@@ -97,17 +122,13 @@ export class AudioPresetManager {
             scanDir(fullPath, depth + 1);
           } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".epr")) {
             const baseName = entry.name.replace(/\.epr$/i, "");
-            let formatSuggestion = "Export Preset";
-            if (/wav|wave|audio/i.test(baseName)) {
-              formatSuggestion = "WAV Audio";
-            } else if (/aac|m4a|mp3/i.test(baseName)) {
-              formatSuggestion = "Compressed Audio";
-            }
+            const validation = validateWavPresetContent(fs.readFileSync(fullPath, "utf8"));
+            if (!validation.valid) continue;
             results.push({
               path: fullPath.replace(/\\/g, "/"),
               name: baseName,
               isCustom: true,
-              formatSuggestion
+              formatSuggestion: "WAV Audio"
             });
           }
         }
@@ -132,7 +153,7 @@ export class AudioPresetManager {
   /**
    * Validates if a preset path exists and is an .epr file.
    */
-  public validatePreset(presetPath: string): { valid: boolean; reason?: string } {
+  public validatePreset(presetPath: string): PresetValidation {
     if (!presetPath || !presetPath.trim()) {
       return { valid: false, reason: "No preset path specified." };
     }
@@ -156,10 +177,26 @@ export class AudioPresetManager {
       if (!presetPath.toLowerCase().endsWith(".epr")) {
         return { valid: false, reason: "File is not an Adobe .epr export preset." };
       }
-      return { valid: true };
+      const content = fs.readFileSync(presetPath, "utf8");
+      return validateWavPresetContent(content);
     } catch (err: any) {
       return { valid: false, reason: err.message || "Failed to inspect preset file." };
     }
+  }
+
+  /** Returns the saved compatible preset, or discovers and remembers one. */
+  public async resolveCompatiblePresetPath(): Promise<string> {
+    const configured = this.getSelectedPresetPath();
+    if (configured && this.validatePreset(configured).valid) return configured;
+
+    const discovered = await this.discoverPresets();
+    if (discovered.length > 0) {
+      this.setSelectedPresetPath(discovered[0].path);
+      return discovered[0].path;
+    }
+    throw new Error(
+      "No compatible WAV audio preset was found. In Premiere choose File > Export > Media > Waveform Audio, disable video, save the preset, then click Load again."
+    );
   }
 
   /**

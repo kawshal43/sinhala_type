@@ -33,7 +33,7 @@ $._AutoCap_Host = (function () {
     if (!app.project) {
       throw new Error("No active Premiere Pro project opened.");
     }
-    if (sequenceId) {
+    if (sequenceId && sequenceId !== "active_sequence") {
       var seqCount = app.project.sequences ? app.project.sequences.numSequences : 0;
       for (var i = 0; i < seqCount; i++) {
         var s = app.project.sequences[i];
@@ -41,6 +41,9 @@ $._AutoCap_Host = (function () {
           return s;
         }
       }
+    }
+    if (sequenceId && sequenceId !== "active_sequence") {
+      throw new Error("Requested sequence no longer exists: " + sequenceId);
     }
     var activeSeq = app.project.activeSequence;
     if (!activeSeq && app.project.sequences && app.project.sequences.numSequences > 0) {
@@ -144,22 +147,22 @@ $._AutoCap_Host = (function () {
 
   function restoreSequenceState(sequence, snapshot) {
     if (!sequence || !snapshot) return;
-    try {
-      if (snapshot.audioTrackMutes && sequence.audioTracks) {
-        for (var i = 0; i < snapshot.audioTrackMutes.length && i < sequence.audioTracks.numTracks; i++) {
-          var shouldMute = snapshot.audioTrackMutes[i] ? 1 : 0;
-          sequence.audioTracks[i].setMute(shouldMute);
-        }
+    var failures = [];
+    function attempt(fn) { try { fn(); } catch (err) { failures.push(String(err)); } }
+    if (snapshot.audioTrackMutes && sequence.audioTracks) {
+      for (var i = 0; i < snapshot.audioTrackMutes.length && i < sequence.audioTracks.numTracks; i++) {
+        (function(index) { attempt(function() {
+          sequence.audioTracks[index].setMute(snapshot.audioTrackMutes[index] ? 1 : 0);
+        }); })(i);
       }
-      if (snapshot.inPointSec !== null && sequence.setInPoint) {
-        sequence.setInPoint(snapshot.inPointSec);
-      }
-      if (snapshot.outPointSec !== null && sequence.setOutPoint) {
-        sequence.setOutPoint(snapshot.outPointSec);
-      }
-    } catch (restoreErr) {
-      // Continue cleanup
     }
+    if (snapshot.inPointSec !== null && sequence.setInPoint) {
+      attempt(function() { sequence.setInPoint(snapshot.inPointSec); });
+    }
+    if (snapshot.outPointSec !== null && sequence.setOutPoint) {
+      attempt(function() { sequence.setOutPoint(snapshot.outPointSec); });
+    }
+    return failures;
   }
 
   /**
@@ -202,7 +205,7 @@ $._AutoCap_Host = (function () {
           sequence.audioTracks[t].setMute(t === request.trackIndex ? 0 : 1);
         }
       } else if (request.kind === "range") {
-        if (typeof request.startSec !== "number" || typeof request.endSec !== "number" || request.endSec <= request.startSec) {
+        if (!isFinite(request.startSec) || !isFinite(request.endSec) || request.startSec < 0 || request.endSec <= request.startSec) {
           return makeError("INVALID_RANGE", "Invalid range bounds: start=" + request.startSec + ", end=" + request.endSec);
         }
         sequence.setInPoint(request.startSec);
@@ -210,6 +213,7 @@ $._AutoCap_Host = (function () {
         workAreaType = 1;
 
         if (typeof request.trackIndex === "number" && sequence.audioTracks) {
+          if (request.trackIndex < 0 || request.trackIndex >= sequence.audioTracks.numTracks || request.trackIndex % 1 !== 0) return makeError("INVALID_TRACK", "Audio track index out of range.");
           for (var rt = 0; rt < sequence.audioTracks.numTracks; rt++) {
             sequence.audioTracks[rt].setMute(rt === request.trackIndex ? 0 : 1);
           }
@@ -255,7 +259,8 @@ $._AutoCap_Host = (function () {
     } finally {
       // 4. Guaranteed restoration of sequence state
       if (sequence && snapshot) {
-        restoreSequenceState(sequence, snapshot);
+        var failures = restoreSequenceState(sequence, snapshot);
+        if (failures.length) return makeError("STATE_RESTORE_FAILED", "Export finished but Premiere state could not be fully restored: " + failures.join("; "));
       }
     }
   }
@@ -279,6 +284,8 @@ $._AutoCap_Host = (function () {
       if (!srtFile.exists) {
         return makeError("FILE_NOT_FOUND", "Subtitle file not found on disk: " + srtPath);
       }
+
+      var sequence = resolveSequence(request.sequenceId);
 
       // 1. Import file into active project
       app.project.importFiles([srtPath], false, app.project.rootItem, false);
@@ -312,16 +319,16 @@ $._AutoCap_Host = (function () {
       }
 
       // 3. Attempt native caption track creation
-      var sequence = resolveSequence(request.sequenceId);
+
       var timelineStartSec = typeof request.timelineStartSec === "number" ? request.timelineStartSec : 0;
       var trackCreated = false;
 
       // Premiere Pro 15.0+ (2021+) unified caption API: sequence.createCaptionTrack
       if (sequence && sequence.createCaptionTrack) {
         try {
-          var timeObj = sequence.createTime ? sequence.createTime(timelineStartSec) : timelineStartSec;
+          var timeObj = 0; // SRT cues already include the timeline offset.
           var res = sequence.createCaptionTrack(targetItem, timeObj);
-          if (res !== false) {
+          if (res === true) {
             trackCreated = true;
           }
         } catch (capErr) {
@@ -349,91 +356,363 @@ $._AutoCap_Host = (function () {
     }
   }
 
-  /**
-   * Inserts a verified MOGRT graphic template into the target video track and populates text.
-   */
+  function normalizeControlName(name) {
+    return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/^\s+|\s+$/g, "");
+  }
+
+  function nameMatches(name, aliases) {
+    var normalized = normalizeControlName(name);
+    for (var i = 0; i < aliases.length; i++) {
+      if (normalized === aliases[i]) return true;
+    }
+    return false;
+  }
+
+  function parseHexColor(value) {
+    var hex = String(value || "").replace("#", "");
+    if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+    return {
+      a: 255,
+      r: parseInt(hex.substring(0, 2), 16),
+      g: parseInt(hex.substring(2, 4), 16),
+      b: parseInt(hex.substring(4, 6), 16)
+    };
+  }
+
+  function setTrackItemDuration(trackItem, durationSec) {
+    try {
+      if (!trackItem || !trackItem.start || !isFinite(durationSec) || durationSec <= 0) return false;
+      if (typeof Time !== "undefined") {
+        var endTime = new Time();
+        endTime.seconds = trackItem.start.seconds + durationSec;
+        trackItem.end = endTime;
+      } else {
+        trackItem.end = trackItem.start.seconds + durationSec;
+      }
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function padZero(num, size) {
+    var s = String(num);
+    while (s.length < (size || 3)) s = "0" + s;
+    return s;
+  }
+
+  function resolveBundledTemplatePath(requestedPath) {
+    if (requestedPath) {
+      var custom = new File(requestedPath);
+      if (custom.exists) return custom.fsName;
+    }
+    // Attempt automatic discovery of bundled AutoCapCaption.mogrt
+    try {
+      if (typeof $ !== "undefined" && $.fileName) {
+        var thisFile = new File($.fileName);
+        var jsxDir = thisFile.parent;
+        var extDir = jsxDir.parent;
+        var candidates = [
+          extDir.fsName + "/assets/AutoCapCaption.mogrt",
+          extDir.fsName + "/dist/assets/AutoCapCaption.mogrt",
+          jsxDir.fsName + "/assets/AutoCapCaption.mogrt",
+          jsxDir.fsName + "/../assets/AutoCapCaption.mogrt"
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+          var cand = new File(candidates[i]);
+          if (cand.exists) return cand.fsName;
+        }
+      }
+    } catch (e) {}
+    return requestedPath || "";
+  }
+
+  function clearExistingAutoCapGraphics(sequence, trackIndex) {
+    try {
+      var track = sequence.videoTracks[trackIndex];
+      if (!track || !track.clips) return 0;
+      var count = 0;
+      for (var i = track.clips.numItems - 1; i >= 0; i--) {
+        var clip = track.clips[i];
+        if (clip && clip.name && clip.name.indexOf("AutoCap Caption") === 0) {
+          if (typeof clip.remove === "function") {
+            try { clip.remove(true, true); count++; continue; } catch (re) {}
+          }
+          try {
+            clip.disabled = true;
+            clip.name = "[Replaced] " + clip.name;
+            count++;
+          } catch (de) {}
+        }
+      }
+      return count;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  function updateExistingGraphicTiming(sequence, trackIndex, cues, offset, batchStartIndex) {
+    var track = sequence.videoTracks[trackIndex];
+    if (!track || !track.clips) return { updatedCount: 0 };
+    var clipsByName = {};
+    for (var i = 0; i < track.clips.numItems; i++) {
+      var clip = track.clips[i];
+      if (clip && clip.name) clipsByName[clip.name] = clip;
+    }
+    var updated = 0;
+    for (var c = 0; c < cues.length; c++) {
+      var cue = cues[c];
+      var globalIdx = (batchStartIndex || 0) + c;
+      var expectedName = "AutoCap Caption " + padZero(globalIdx + 1, 3);
+      var targetClip = clipsByName[expectedName];
+      if (targetClip) {
+        var startSec = offset + cue.start;
+        var durationSec = cue.end - cue.start;
+        if (typeof Time !== "undefined") {
+          var startTime = new Time();
+          startTime.seconds = startSec;
+          targetClip.start = startTime;
+          var endTime = new Time();
+          endTime.seconds = startSec + durationSec;
+          targetClip.end = endTime;
+        } else {
+          targetClip.start = { seconds: startSec };
+          targetClip.end = { seconds: startSec + durationSec };
+        }
+        updated++;
+      }
+    }
+    return { updatedCount: updated };
+  }
+
+  function applyMogrtControls(trackItem, text, style) {
+    var applied = [];
+    var missing = [];
+    var component = trackItem && trackItem.getMGTComponent ? trackItem.getMGTComponent() : null;
+    var properties = component && component.properties ? component.properties : null;
+    var controls = [
+      { key: "text", aliases: ["text", "source text", "caption", "caption text", "title", "textlayer"], value: text },
+      { key: "fontFamily", aliases: ["font", "font family", "font name"], value: style.fontFamily },
+      { key: "fontSize", aliases: ["font size", "text size", "size"], value: style.fontSize },
+      { key: "fillColor", aliases: ["fill color", "text color", "font color", "color"], value: style.fillColor, color: true },
+      { key: "positionX", aliases: ["position x", "x position", "text x"], value: style.positionX },
+      { key: "positionY", aliases: ["position y", "y position", "text y"], value: style.positionY },
+      { key: "alignment", aliases: ["alignment", "text alignment", "align"], value: style.alignment, choices: { left: 1, center: 2, right: 3 } },
+      { key: "strokeWidth", aliases: ["stroke width", "outline width", "stroke"], value: style.strokeWidth },
+      { key: "shadowEnabled", aliases: ["shadow", "drop shadow", "shadow enabled"], value: style.shadowEnabled },
+      { key: "backgroundEnabled", aliases: ["background", "background enabled", "box"], value: style.backgroundEnabled },
+      { key: "animation", aliases: ["animation", "animation style", "effect", "effect style"], value: style.animation, choices: { none: 1, fade: 2, pop: 3, "slide-up": 4 } },
+      { key: "animationDuration", aliases: ["animation duration", "effect duration"], value: style.animationDuration }
+    ];
+
+    for (var c = 0; c < controls.length; c++) {
+      var control = controls[c];
+      if (control.key !== "text" && (typeof control.value === "undefined" || control.value === "")) continue;
+      var found = false;
+      if (properties) {
+        for (var p = 0; p < properties.numItems; p++) {
+          var prop = properties[p];
+          if (!prop || !nameMatches(prop.displayName, control.aliases)) continue;
+          try {
+            if (control.color && prop.setColorValue) {
+              var color = parseHexColor(control.value);
+              if (!color) break;
+              prop.setColorValue(color.a, color.r, color.g, color.b, 1);
+            } else {
+              var value = control.choices ? control.choices[control.value] : control.value;
+              prop.setValue(value, 1);
+            }
+            found = true;
+            break;
+          } catch (setErr) {
+            found = false;
+            break;
+          }
+        }
+      }
+      (found ? applied : missing).push(control.key);
+    }
+    return { applied: applied, missing: missing };
+  }
+
+  function insertMogrtItem(sequence, templatePath, trackIndex, startSec, durationSec, text, style) {
+    // Premiere's importMGT time parameter is a string containing ticks.
+    var ticksPerSecond = 254016000000;
+    var insertTicks = String(Math.round(Math.max(0, startSec) * ticksPerSecond));
+    var trackItem = sequence.importMGT ? sequence.importMGT(templatePath, insertTicks, trackIndex, 0) : null;
+    if (!trackItem) throw new Error("Premiere importMGT did not create a track item.");
+    var properties = applyMogrtControls(trackItem, text, style || {});
+    setTrackItemDuration(trackItem, durationSec);
+    return { trackItem: trackItem, properties: properties };
+  }
+
+  /** Inserts one verified MOGRT at the playhead. */
   function insertMOGRTGraphic(requestJson) {
     try {
-      if (!app.project) {
-        return makeError("NO_PROJECT", "No active Premiere Pro project opened.");
-      }
-
+      if (!app.project) return makeError("NO_PROJECT", "No active Premiere Pro project opened.");
       var request = typeof requestJson === "string" ? JSON.parse(requestJson) : requestJson;
-      var templatePath = request.templatePath;
-      var text = request.text;
+      var templatePath = resolveBundledTemplatePath(request.templatePath);
       var trackIndex = typeof request.targetVideoTrackIndex === "number" ? request.targetVideoTrackIndex : 0;
-      var durationSec = typeof request.durationSec === "number" ? request.durationSec : 3.0;
-
       var tFile = new File(templatePath);
-      if (!tFile.exists) {
-        return makeError("TEMPLATE_NOT_FOUND", "MOGRT template file not found: " + templatePath);
-      }
-
+      if (!tFile.exists) return makeError("TEMPLATE_NOT_FOUND", "MOGRT template file not found: " + templatePath);
       var sequence = resolveSequence(request.sequenceId);
       if (!sequence.videoTracks || trackIndex < 0 || trackIndex >= sequence.videoTracks.numTracks) {
         return makeError("INVALID_TRACK", "Target video track index out of range: " + trackIndex);
       }
-
-      var insertTime = typeof request.playheadTimeSec === "number"
-        ? request.playheadTimeSec
-        : (sequence.getPlayerPosition ? sequence.getPlayerPosition().seconds : 0);
-
-      // sequence.importMGT(path, time, videoTrackIndex, audioTrackIndex)
-      var trackItem = null;
-      if (sequence.importMGT) {
-        trackItem = sequence.importMGT(templatePath, insertTime, trackIndex, 0);
-      }
-
-      if (!trackItem) {
-        return makeError("MOGRT_IMPORT_FAILED", "Premiere importMGT did not create a track item.");
-      }
-
-      // Update text property
-      var textApplied = false;
-      try {
-        if (trackItem.getMGTComponent) {
-          var mgtComp = trackItem.getMGTComponent();
-          if (mgtComp && mgtComp.properties) {
-            for (var p = 0; p < mgtComp.properties.numItems; p++) {
-              var prop = mgtComp.properties[p];
-              if (prop && (prop.displayName.toLowerCase().indexOf("text") !== -1 ||
-                           prop.displayName.toLowerCase().indexOf("title") !== -1 ||
-                           prop.displayName.toLowerCase().indexOf("caption") !== -1)) {
-                prop.setValue(text, true);
-                textApplied = true;
-                break;
-              }
-            }
-          }
-        }
-      } catch (propErr) {
-        // Continue
-      }
-
-      // Adjust duration
-      try {
-        if (trackItem.end && trackItem.start) {
-          trackItem.end = trackItem.start.seconds + durationSec;
-        }
-      } catch (durErr) {}
-
+      var insertTime = typeof request.playheadTimeSec === "number" ? request.playheadTimeSec : (sequence.getPlayerPosition ? sequence.getPlayerPosition().seconds : 0);
+      var inserted = insertMogrtItem(sequence, templatePath, trackIndex, insertTime, request.durationSec || 3, request.text, request.style || {});
+      var hasText = false;
+      for (var i = 0; i < inserted.properties.applied.length; i++) if (inserted.properties.applied[i] === "text") hasText = true;
       return makeSuccess({
-        success: true,
-        message: textApplied
-          ? "Inserted MOGRT graphic with Sinhala text onto Video " + (trackIndex + 1)
-          : "Inserted MOGRT graphic onto Video " + (trackIndex + 1) + " (Text configuration required in Essential Graphics)",
-        trackItemName: trackItem.name,
-        appliedText: textApplied ? text : ""
+        success: hasText,
+        code: hasText ? null : "TEXT_CONTROL_NOT_FOUND",
+        message: hasText ? "Inserted editable graphic onto Video " + (trackIndex + 1) : "The MOGRT was inserted, but it does not expose a Text or Caption control.",
+        trackItemName: inserted.trackItem.name,
+        appliedText: hasText ? request.text : "",
+        appliedProperties: inserted.properties.applied,
+        missingProperties: inserted.properties.missing
       });
     } catch (err) {
       return makeError("MOGRT_FAILED", err.message || err.toString());
     }
   }
 
+  /** Inserts a chunk / batch of caption cues as editable MOGRT graphics. */
+  function insertCaptionGraphicsBatch(requestJson) {
+    try {
+      if (!app.project) return makeError("NO_PROJECT", "No active Premiere Pro project opened.");
+      var request = typeof requestJson === "string" ? JSON.parse(requestJson) : requestJson;
+      var cues = request.cues || [];
+      if (!cues.length) return makeError("NO_CUES", "No captions were supplied for this batch.");
+      var sequence = resolveSequence(request.sequenceId);
+      var trackIndex = typeof request.targetVideoTrackIndex === "number" ? request.targetVideoTrackIndex : 0;
+      if (!sequence.videoTracks || trackIndex < 0 || trackIndex >= sequence.videoTracks.numTracks) {
+        return makeError("INVALID_TRACK", "Target video track index out of range: " + trackIndex);
+      }
+
+      var mode = request.mode || "add"; // "add" | "replace" | "timing-only"
+      var offset = typeof request.timelineStartSec === "number" ? request.timelineStartSec : 0;
+      var batchStartIndex = typeof request.batchStartIndex === "number" ? request.batchStartIndex : 0;
+
+      // In timing-only mode, update existing graphic timings without touching user styling/text
+      if (mode === "timing-only") {
+        var timingResult = updateExistingGraphicTiming(sequence, trackIndex, cues, offset, batchStartIndex);
+        return makeSuccess({
+          success: true,
+          mode: "timing-only",
+          batchInserted: timingResult.updatedCount,
+          batchStartIndex: batchStartIndex,
+          message: "Updated timing for " + timingResult.updatedCount + " graphics."
+        });
+      }
+
+      // If replace mode and this is the first batch, clear old AutoCap graphics on track
+      if (mode === "replace" && batchStartIndex === 0) {
+        clearExistingAutoCapGraphics(sequence, trackIndex);
+      }
+
+      var templatePath = resolveBundledTemplatePath(request.templatePath);
+      var tFile = new File(templatePath);
+      if (!tFile.exists) return makeError("TEMPLATE_NOT_FOUND", "MOGRT template file not found: " + templatePath);
+
+      var insertedCount = 0;
+      var appliedMap = {};
+      var missingMap = {};
+
+      for (var c = 0; c < cues.length; c++) {
+        var cue = cues[c];
+        var cueGlobalIdx = batchStartIndex + c;
+        var clipName = "AutoCap Caption " + padZero(cueGlobalIdx + 1, 3);
+        var result = insertMogrtItem(sequence, templatePath, trackIndex, offset + cue.start, cue.end - cue.start, cue.text, request.style || {});
+        if (result && result.trackItem) {
+          result.trackItem.name = clipName;
+        }
+        insertedCount++;
+
+        var textApplied = false;
+        for (var a = 0; a < result.properties.applied.length; a++) {
+          appliedMap[result.properties.applied[a]] = true;
+          if (result.properties.applied[a] === "text") textApplied = true;
+        }
+        for (var m = 0; m < result.properties.missing.length; m++) missingMap[result.properties.missing[m]] = true;
+
+        if (!textApplied) {
+          return makeSuccess({
+            success: false,
+            code: "TEXT_CONTROL_NOT_FOUND",
+            batchInserted: insertedCount,
+            batchStartIndex: batchStartIndex,
+            message: "Stopped because the MOGRT does not expose a Text or Caption control.",
+            appliedProperties: mapKeys(appliedMap),
+            missingProperties: mapKeys(missingMap)
+          });
+        }
+      }
+
+      return makeSuccess({
+        success: true,
+        mode: mode,
+        batchInserted: insertedCount,
+        batchStartIndex: batchStartIndex,
+        appliedProperties: mapKeys(appliedMap),
+        missingProperties: mapKeys(missingMap),
+        message: "Inserted batch of " + insertedCount + " graphics."
+      });
+    } catch (err) {
+      return makeError("MOGRT_BATCH_FAILED", err.message || err.toString());
+    }
+  }
+
+  /** Inserts all caption cues (delegates to batch insertion or single-run). */
+  function insertCaptionGraphics(requestJson) {
+    try {
+      var request = typeof requestJson === "string" ? JSON.parse(requestJson) : requestJson;
+      var cues = request.cues || [];
+      if (!cues.length) return makeError("NO_CUES", "No captions were supplied.");
+      var batchReq = {
+        sequenceId: request.sequenceId,
+        timelineStartSec: request.timelineStartSec,
+        templatePath: request.templatePath,
+        targetVideoTrackIndex: request.targetVideoTrackIndex,
+        batchStartIndex: 0,
+        totalCues: cues.length,
+        cues: cues,
+        style: request.style,
+        mode: request.mode || "add"
+      };
+      var batchRes = insertCaptionGraphicsBatch(batchReq);
+      if (typeof batchRes === "string") batchRes = JSON.parse(batchRes);
+      if (!batchRes.success) return makeError(batchRes.error?.code || "MOGRT_FAILED", batchRes.error?.message || "Failed inserting graphics");
+
+      return makeSuccess({
+        success: batchRes.data?.success !== false,
+        code: batchRes.data?.code,
+        insertedCount: batchRes.data?.batchInserted || cues.length,
+        requestedCount: cues.length,
+        message: "Inserted " + (batchRes.data?.batchInserted || cues.length) + " styled caption graphics.",
+        appliedProperties: batchRes.data?.appliedProperties,
+        missingProperties: batchRes.data?.missingProperties
+      });
+    } catch (err) {
+      return makeError("MOGRT_BATCH_FAILED", err.message || err.toString());
+    }
+  }
+
+  function mapKeys(map) {
+    var keys = [];
+    for (var key in map) if (map.hasOwnProperty(key)) keys.push(key);
+    return keys;
+  }
+
   return {
     inspectActiveSequence: inspectActiveSequence,
     exportTimelineAudio: exportTimelineAudio,
     importCaptionTrack: importCaptionTrack,
-    insertMOGRTGraphic: insertMOGRTGraphic
+    insertMOGRTGraphic: insertMOGRTGraphic,
+    insertCaptionGraphics: insertCaptionGraphics,
+    insertCaptionGraphicsBatch: insertCaptionGraphicsBatch
   };
 })();
+
+

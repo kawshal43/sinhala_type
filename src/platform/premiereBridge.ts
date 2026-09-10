@@ -507,7 +507,8 @@ export async function prepareMediaForTranscription(
   mediaPath: string,
   sourceStartSec = 0,
   sourceDurationSec = 0,
-  onProgress?: (percent: number, message: string) => void
+  onProgress?: (percent: number, message: string) => void,
+  requireTrimmedExtraction = false
 ): Promise<PreparedTranscriptionMedia> {
   const startedAt = Date.now();
   const nodeReq = getNodeRequire();
@@ -560,6 +561,9 @@ export async function prepareMediaForTranscription(
       };
     } catch (error) {
       console.warn("Audio-only preprocessing unavailable; using original media:", error);
+      if (requireTrimmedExtraction) {
+        throw new Error(`Could not extract the selected clip audio: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
       if (outputPath) {
         try {

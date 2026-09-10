@@ -1,5 +1,5 @@
 export type SttProvider = "auto" | "gemini" | "groq" | "openai" | "webspeech";
-export type LanguageChoice = "si" | "en" | "auto";
+export type LanguageChoice = "si" | "en" | "si-en" | "auto";
 export type DefaultEncoding = "unicode" | "wije" | "isi";
 
 export interface AppSettings {
@@ -10,6 +10,10 @@ export interface AppSettings {
   language: LanguageChoice;
   defaultEncoding: DefaultEncoding;
   maxCpl: number;
+  autoImportCaptions?: boolean;
+  customEnglishWords?: string[];
+  preserveEnglishLoanwords?: boolean;
+  customMogrtPath?: string;
 }
 
 const SETTINGS_KEY = "autocap.settings.v1";
@@ -21,7 +25,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: "",
   language: "auto",
   defaultEncoding: "unicode",
-  maxCpl: 38
+  maxCpl: 38,
+  autoImportCaptions: false,
+  customEnglishWords: [],
+  preserveEnglishLoanwords: true,
+  customMogrtPath: ""
 };
 
 // In-memory cache fallback

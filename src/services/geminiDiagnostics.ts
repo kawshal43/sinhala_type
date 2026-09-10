@@ -28,7 +28,7 @@ export async function runGeminiAudioDiagnostic(
   }
 
   const startTime = Date.now();
-  const candidateModels = await geminiModelRegistry.getCandidateModels(apiKey, preference);
+  const candidateModels = await geminiModelRegistry.getCandidateModels(apiKey, preference, signal);
 
   let lastError = "";
 
@@ -126,3 +126,4 @@ export async function runGeminiAudioDiagnostic(
     message: `Gemini audio diagnostic failed across candidate models: ${lastError}`
   };
 }
+

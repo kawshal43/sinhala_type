@@ -3,7 +3,8 @@ import {
   convertCaptionText,
   convertSubtitleCues,
   getSinhalaFontTestSamples,
-  isSinhalaText
+  isSinhalaText,
+  hasMixedEnglishAndSinhala
 } from "../src/core/subtitles/captionConverter";
 import type { SubtitleCue } from "../src/core/subtitles/srtParser";
 
@@ -45,6 +46,13 @@ describe("captionConverter", () => {
     expect(isSinhalaText("Video 123 !@#")).toBe(false);
     expect(isSinhalaText("Mixed English සහ සිංහල")).toBe(true);
     expect(isSinhalaText("")).toBe(false);
+  });
+
+  it("detects mixed English and Sinhala text", () => {
+    expect(hasMixedEnglishAndSinhala("මම YouTube video එකක් හැදුවා")).toBe(true);
+    expect(hasMixedEnglishAndSinhala("මම අද ගෙදර යනවා")).toBe(false);
+    expect(hasMixedEnglishAndSinhala("This is pure English")).toBe(false);
+    expect(hasMixedEnglishAndSinhala("")).toBe(false);
   });
 
   it("generates font test samples for all encodings", () => {

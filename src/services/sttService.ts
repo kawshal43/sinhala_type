@@ -1,3 +1,4 @@
+import { geminiModelRegistry } from "./geminiModelRegistry";
 import type { SubtitleCue } from "../core/subtitles/srtParser";
 import { parseCaptionResponse } from "../core/subtitles/srtParser";
 import { isSinhalaText } from "../core/subtitles/captionConverter";
@@ -78,7 +79,10 @@ async function transcribeWithGroq(
   formData.append("file", file, (file as File).name || "audio.wav");
   formData.append("model", "whisper-large-v3");
   formData.append("response_format", "verbose_json");
-  if (language && language !== "auto") {
+  if (language === "si-en") {
+    formData.append("language", "si");
+    formData.append("prompt", "Sinhala and English mixed dialogue (සිංහල සහ English). YouTube, video, channel, subscribe, camera, edit, Premiere.");
+  } else if (language && language !== "auto") {
     formData.append("language", language);
   }
 
@@ -144,7 +148,10 @@ async function transcribeWithOpenAI(
   formData.append("file", file, (file as File).name || "audio.wav");
   formData.append("model", "whisper-1");
   formData.append("response_format", "verbose_json");
-  if (language && language !== "auto") {
+  if (language === "si-en") {
+    formData.append("language", "si");
+    formData.append("prompt", "Sinhala and English mixed dialogue (සිංහල සහ English). YouTube, video, channel, subscribe, camera, edit, Premiere.");
+  } else if (language && language !== "auto") {
     formData.append("language", language);
   }
 
@@ -260,11 +267,13 @@ async function transcribeWithGemini(
   }
 
   const langInstruction =
-    language === "si"
+    language === "si-en"
+      ? "Transcribe spoken dialogue in natural code-mixed Sinhala and English. Spoken Sinhala words must be transcribed in accurate Sinhala Unicode (සිංහල), and spoken English words, technical terms, and brand names must be transcribed in standard English spelling (e.g. 'මේ YouTube video එක බලන්න', 'channel එක subscribe කරන්න'). Do not phonetically spell English words in Sinhala script."
+      : language === "si"
       ? "Transcribe strictly in Sinhala language Unicode (සිංහල)."
       : language === "en"
       ? "Transcribe strictly in English."
-      : "Transcribe the spoken language accurately (primarily Sinhala or English).";
+      : "Transcribe the spoken language accurately (primarily Sinhala, English, or mixed Sinhala-English). Spoken English terms and brand names may be kept in standard English spelling.";
 
   const prompt = `You are a professional subtitle transcriptionist.
 ${langInstruction}
@@ -309,13 +318,7 @@ Do not include identifiers, markdown, notes, or timestamps inside the text field
     }
   };
 
-  const candidateModels = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro"
-  ];
+  const candidateModels = await geminiModelRegistry.getCandidateModels(apiKey, "flash", signal);
   let lastError = "";
 
   try {
@@ -426,6 +429,7 @@ Do not include identifiers, markdown, notes, or timestamps inside the text field
         // Fallback to detected language or language parameter
       }
 
+      geminiModelRegistry.rememberSuccessfulModel(apiKey, model);
       return { cues, detectedLanguage: detectedLang };
     } catch (err: any) {
       if (signal?.aborted) throw signal.reason || err;
@@ -554,7 +558,10 @@ export async function retranscribeCue(options: {
       formData.append("model", "whisper-large-v3");
       formData.append("response_format", "json");
       formData.append("temperature", "0.1");
-      if (language && language !== "auto") {
+      if (language === "si-en") {
+        formData.append("language", "si");
+        formData.append("prompt", "Sinhala and English mixed dialogue (සිංහල සහ English). YouTube, video, channel, subscribe, camera, edit.");
+      } else if (language && language !== "auto") {
         formData.append("language", language);
       }
 
@@ -586,7 +593,10 @@ export async function retranscribeCue(options: {
       formData.append("model", "whisper-1");
       formData.append("response_format", "json");
       formData.append("temperature", "0.1");
-      if (language && language !== "auto") {
+      if (language === "si-en") {
+        formData.append("language", "si");
+        formData.append("prompt", "Sinhala and English mixed dialogue (සිංහල සහ English). YouTube, video, channel, subscribe, camera, edit.");
+      } else if (language && language !== "auto") {
         formData.append("language", language);
       }
 
@@ -615,11 +625,13 @@ export async function retranscribeCue(options: {
     const base64Audio = await blobToBase64(file);
     const mimeType = file.type || "audio/wav";
     const langInstruction =
-      language === "si"
+      language === "si-en"
+        ? "Transcribe spoken dialogue in natural code-mixed Sinhala and English. Spoken Sinhala words must be in Sinhala Unicode (සිංහල), and spoken English words/technical terms must be in standard English spelling."
+        : language === "si"
         ? "Transcribe strictly in Sinhala Unicode (සිංහල). Pay extra attention to clear Sinhala words and spellings."
         : language === "en"
         ? "Transcribe strictly in English."
-        : "Transcribe accurately in the spoken language (primarily Sinhala or English).";
+        : "Transcribe accurately in the spoken language (primarily Sinhala, English, or mixed Sinhala-English).";
 
     const prompt = `You are an expert audio transcriptionist.
 ${langInstruction}
@@ -646,16 +658,7 @@ Output ONLY the clean transcribed sentence text. Do NOT output timestamps, forma
       }
     };
 
-    const defaultCandidates = [
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-2.5-flash"
-    ];
-
-    const candidateModels = lastWorkingGeminiModel
-      ? [lastWorkingGeminiModel, ...defaultCandidates.filter((m) => m !== lastWorkingGeminiModel)]
-      : defaultCandidates;
+    const candidateModels = await geminiModelRegistry.getCandidateModels(settings.geminiApiKey, "flash", signal);
 
     for (const model of candidateModels) {
       if (signal?.aborted) throw signal.reason || new Error("Transcription cancelled.");
@@ -673,7 +676,7 @@ Output ONLY the clean transcribed sentence text. Do NOT output timestamps, forma
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const cleaned = cleanTranscribedText(text);
         if (cleaned) {
-          lastWorkingGeminiModel = model;
+          geminiModelRegistry.rememberSuccessfulModel(settings.geminiApiKey, model);
           return cleaned;
         }
       } catch (error) {

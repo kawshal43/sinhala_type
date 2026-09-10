@@ -57,4 +57,22 @@ describe("premiereAudioAndCaptions in non-CEP (browser / node) mode", () => {
     expect(res.success).toBe(true);
     expect(res.appliedText).toBe("ආයුබෝවන්");
   });
+  it("prepares every valid caption as a separately timed styled graphic", async () => {
+    const res = await premiereGraphicsClient.insertCaptionGraphics({
+      sequenceId: "seq_1",
+      timelineStartSec: 12,
+      templatePath: "C:/Templates/captions.mogrt",
+      encoding: "unicode",
+      targetVideoTrackIndex: 2,
+      cues: [
+        { id: 1, start: 0, end: 2.5, text: "සිංහල and English" },
+        { id: 2, start: 3, end: 5, text: "දෙවන caption" }
+      ],
+      style: { fontFamily: "Noto Sans Sinhala", fontSize: 64, animation: "fade" }
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.insertedCount).toBe(2);
+    expect(res.requestedCount).toBe(2);
+  });
 });

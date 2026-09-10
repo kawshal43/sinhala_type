@@ -35,7 +35,15 @@ export class PremiereAudioClient {
       throw new Error("Audio export cancelled before initiation.");
     }
 
-    const resolvedPreset = (presetPath || audioPresetManager.getSelectedPresetPath()).trim();
+    const resolvedPreset = (
+      presetPath || (isCep() ? await audioPresetManager.resolveCompatiblePresetPath() : "")
+    ).trim();
+    if (resolvedPreset) {
+      const validation = audioPresetManager.validatePreset(resolvedPreset);
+      if (!validation.valid) {
+        throw new Error(`Incompatible audio export preset: ${validation.reason}`);
+      }
+    }
     if (!resolvedPreset && isCep()) {
       throw new Error(
         "No Premiere audio export preset (.epr) is configured. Please select or choose a preset in Settings > Audio Export."

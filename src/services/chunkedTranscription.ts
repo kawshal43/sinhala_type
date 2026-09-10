@@ -6,7 +6,7 @@ import { findSilenceBoundary } from "../core/vad/speechDetector";
 import { mergeChunkIntoTimeline } from "../core/subtitles/timelineMerger";
 import { clearIncompleteJob, getIncompleteJob, saveIncompleteJob } from "./jobRecovery";
 import { transcribeAudio, type TranscribeOptions, type TranscribeResult } from "./sttService";
-import { checkLocalWorkerHealth, transcribeWithLocalWorker } from "./localWorkerClient";
+import { canProcessTranscription, checkLocalWorkerHealth, transcribeWithLocalWorker } from "./localWorkerClient";
 
 const CHUNK_THRESHOLD_SEC = 120;
 const TARGET_CHUNK_SEC = 90;
@@ -45,7 +45,7 @@ export async function transcribeAudioChunked(options: TranscribeOptions): Promis
   if (resolvedPath) {
     try {
       const workerHealth = await checkLocalWorkerHealth();
-      if (workerHealth) {
+      if (canProcessTranscription(workerHealth) && options.settings.sttProvider === "gemini") {
         options.onProgress?.({
           status: "uploading",
           message: "Connected to AutoCap Local Companion Worker...",

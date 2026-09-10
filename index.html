@@ -55,9 +55,9 @@
               </button>
             </div>
             <div class="source-kind-segmented" role="group" aria-label="Audio Source Scope">
-              <button id="src-kind-seq" class="source-kind-btn active" type="button" data-kind="sequence">Entire Sequence</button>
+              <button id="src-kind-seq" class="source-kind-btn" type="button" data-kind="sequence">Entire Sequence</button>
               <button id="src-kind-track" class="source-kind-btn" type="button" data-kind="track">Audio Track</button>
-              <button id="src-kind-range" class="source-kind-btn" type="button" data-kind="range">Selected Range</button>
+              <button id="src-kind-range" class="source-kind-btn active" type="button" data-kind="range">Selected Range</button>
             </div>
             <div id="track-select-wrapper" class="track-controls-row" hidden>
               <select id="select-audio-track" class="custom-select" aria-label="Select Premiere Pro Audio Track">
@@ -73,6 +73,9 @@
             <div class="track-action-buttons-row">
               <button id="btn-load-track" class="secondary-btn track-load-btn" type="button">
                 Load Selected Audio
+              </button>
+              <button id="btn-generate-selection" class="primary-btn track-load-btn" type="button" title="Load the selected Premiere clips and start transcription">
+                Generate From Selection
               </button>
               <button id="btn-remove-track" class="secondary-btn track-remove-btn" type="button" title="Unload / remove current audio" hidden>
                 &#x2715; Remove Audio
@@ -151,6 +154,7 @@
                 <span class="select-icon">&#x1F310;</span>
                 <select id="select-language" class="custom-select">
                   <option value="auto" selected>Auto-Detect Language</option>
+                  <option value="si-en">Sinhala + English (Mixed / Singlish)</option>
                   <option value="si">Sinhala (&#x0DC3;&#x0DD2;&#x0D82;&#x0DC4;&#x0DBB;)</option>
                   <option value="en">English</option>
                 </select>
@@ -226,20 +230,125 @@
             </div>
           </div>
 
-          <!-- Premiere Pro & Export Buttons -->
-          <div class="export-actions-grid">
-            <button id="btn-import-premiere" class="primary-btn premiere-action" type="button">
-              <span>&#x1F3AC;</span> Import to Premiere
-            </button>
-            <button id="btn-export-srt" class="secondary-btn" type="button">
-              Export .SRT
-            </button>
-            <button id="btn-export-vtt" class="secondary-btn" type="button">
-              Export .VTT
-            </button>
-            <button id="btn-copy-srt" class="secondary-btn" type="button">
-              Copy SRT
-            </button>
+          <!-- Output Format Selector: Native Captions vs Editable Graphics -->
+          <div class="output-format-section">
+            <div class="output-format-toggle-bar">
+              <span class="output-format-heading">Output Format:</span>
+              <div class="output-format-radios">
+                <label class="output-format-radio-label">
+                  <input type="radio" name="caption-output-format" id="output-mode-native" value="native" checked />
+                  <span class="radio-pill">Native Captions (Standard Subtitle Track)</span>
+                </label>
+                <label class="output-format-radio-label">
+                  <input type="radio" name="caption-output-format" id="output-mode-graphics" value="graphics" />
+                  <span class="radio-pill">&#x2728; Editable Graphics (Styled Motion Clips)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Editable Graphics Drawer (shown when Editable Graphics is selected) -->
+            <div id="caption-graphics-drawer" class="caption-graphics-drawer" hidden>
+              <div class="graphic-style-grid">
+                <div class="settings-field">
+                  <label for="caption-graphic-font">Unicode Font</label>
+                  <input id="caption-graphic-font" class="text-input" value="Noto Sans Sinhala" />
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-size">Font Size</label>
+                  <input id="caption-graphic-size" type="number" class="text-input" min="8" max="400" value="64" />
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-color">Text Color</label>
+                  <input id="caption-graphic-color" type="color" class="graphic-color-input" value="#ffffff" />
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-position-preset">Position</label>
+                  <select id="caption-graphic-position-preset" class="custom-select">
+                    <option value="bottom" selected>Bottom Center (960, 930)</option>
+                    <option value="center">Middle Center (960, 540)</option>
+                    <option value="top">Top Center (960, 150)</option>
+                    <option value="custom">Custom Coordinates...</option>
+                  </select>
+                </div>
+                <div id="custom-coords-container" class="custom-coords-row" hidden>
+                  <div class="settings-field">
+                    <label for="caption-graphic-x">X Position</label>
+                    <input id="caption-graphic-x" type="number" class="text-input" value="960" />
+                  </div>
+                  <div class="settings-field">
+                    <label for="caption-graphic-y">Y Position</label>
+                    <input id="caption-graphic-y" type="number" class="text-input" value="930" />
+                  </div>
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-align">Alignment</label>
+                  <select id="caption-graphic-align" class="custom-select">
+                    <option value="center" selected>Center</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-animation">Animation / Effect</label>
+                  <select id="caption-graphic-animation" class="custom-select">
+                    <option value="none">None (Static)</option>
+                    <option value="fade" selected>Fade</option>
+                    <option value="pop">Pop</option>
+                    <option value="slide-up">Slide Up</option>
+                  </select>
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-track">Target Video Track</label>
+                  <select id="caption-graphic-track" class="custom-select">
+                    <option value="0">Video 1 (V1)</option>
+                    <option value="1">Video 2 (V2)</option>
+                    <option value="2" selected>Video 3 (V3)</option>
+                    <option value="3">Video 4 (V4)</option>
+                  </select>
+                </div>
+                <div class="settings-field">
+                  <label for="caption-graphic-mode">Insertion Mode</label>
+                  <select id="caption-graphic-mode" class="custom-select">
+                    <option value="add" selected>Add as New</option>
+                    <option value="replace">Replace Existing AutoCap Graphics</option>
+                    <option value="timing-only">Update Timing Only (Preserve Edits)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="graphic-toggle-row">
+                <label><input id="caption-graphic-stroke-toggle" type="checkbox" checked /> Stroke Outline</label>
+                <label><input id="caption-graphic-shadow" type="checkbox" checked /> Drop Shadow</label>
+                <label><input id="caption-graphic-background" type="checkbox" /> Box Background</label>
+              </div>
+
+              <!-- Insertion Progress Bar & Status -->
+              <div id="graphic-insertion-progress" class="graphic-insertion-progress" hidden>
+                <div class="progress-bar-track">
+                  <div id="graphic-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+                <div class="progress-bar-status-row">
+                  <span id="graphic-progress-text">Adding graphic 0 of 0...</span>
+                  <button id="btn-cancel-graphic-insertion" type="button" class="btn-cancel-task">&#x2715; Cancel</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions Grid -->
+            <div class="export-actions-grid">
+              <button id="btn-import-premiere" class="primary-btn premiere-action" type="button">
+                <span id="premiere-btn-icon">&#x1F3AC;</span> <span id="premiere-btn-text">Import to Premiere</span>
+              </button>
+              <button id="btn-export-srt" class="secondary-btn" type="button">
+                Export .SRT
+              </button>
+              <button id="btn-export-vtt" class="secondary-btn" type="button">
+                Export .VTT
+              </button>
+              <button id="btn-copy-srt" class="secondary-btn" type="button">
+                Copy SRT
+              </button>
+            </div>
           </div>
 
           <!-- Tools toolbar: Undo/Redo, Add, Search, Repair, Recheck, Shift, Split -->
@@ -292,6 +401,12 @@
             </div>
             <textarea id="singlish" spellcheck="false" placeholder="mama ada gedara yanawa"></textarea>
             <div class="typing-tool-buttons" role="group" aria-label="Typing tools">
+              <button id="btn-toggle-en-mode" class="tool-toggle" type="button" title="Toggle between Singlish and English Mode (Ctrl+E)">
+                <span id="en-mode-icon">&#x1F524;</span> <span id="en-mode-label">Singlish</span>
+              </button>
+              <button id="btn-wrap-en" class="tool-toggle" type="button" title="Wrap selection in English quotes (&quot;word&quot;)">
+                <span>+ &quot;En&quot;</span>
+              </button>
               <button id="keyboard-toggle" class="tool-toggle" type="button" aria-expanded="false" aria-controls="keyboard-panel">
                 <span aria-hidden="true">&#x2328;</span> Keyboard
               </button>
@@ -314,15 +429,15 @@
             <div id="hints-panel" class="typing-panel hints-panel" hidden>
               <div class="typing-panel-heading">
                 <strong>Typing hints</strong>
-                <span>Capital letters change some Sinhala sounds.</span>
+                <span>Type Sinhala and English together seamlessly.</span>
               </div>
               <div class="hint-list">
                 <div><code>ka / kaa / kA</code><span>&#x0D9A; / &#x0D9A;&#x0DCF; / &#x0D9A;&#x0DD0;</span></div>
                 <div><code>Ta / Da / Na</code><span>&#x0DA8; / &#x0DAA; / &#x0DAB;</span></div>
                 <div><code>kra / kYa</code><span>&#x0D9A;&#x0DCA;&#x200D;&#x0DBB; / &#x0D9A;&#x0DCA;&#x200D;&#x0DBA;</span></div>
-                <div><code>axka / aN / aH</code><span>&#x0D85;&#x0D82;&#x0D9A; / &#x0D85;&#x0D82; / &#x0D85;&#x0D83;</span></div>
+                <div><code>YouTube / "video"</code><span>YouTube / "video"</span></div>
               </div>
-              <p class="hint-note">Use braces to preserve English text, for example <code>{Premiere Pro}</code>. Everything is converted locally on this computer.</p>
+              <p class="hint-note">English brand names (<code>YouTube</code>, <code>TikTok</code>, <code>iPhone</code>), loanwords (<code>channel</code>, <code>edit</code>, <code>subscribe</code>), and words in <code>"quotes"</code> or <code>{braces}</code> stay in English. Press <strong>Ctrl+E</strong> to toggle English mode.</p>
             </div>
           </section>
         </div>
@@ -348,6 +463,9 @@
             </div>
             <textarea id="sinhala" readonly aria-label="Sinhala output"></textarea>
             <p id="format-note" class="preview-note">Portable Unicode text for Premiere and modern applications.</p>
+            <div id="typer-mixed-warning" class="mixed-font-alert" hidden>
+              &#x26A0;&#xFE0F; <strong>Mixed English+Sinhala:</strong> Legacy fonts (Wije/ISI) cannot display English characters. For mixed text, <strong>Unicode</strong> is recommended.
+            </div>
           </section>
           <div class="typer-actions-row form-grid-2">
             <button id="copy" class="primary-btn copy-action" type="button">Copy Unicode</button>
@@ -511,6 +629,7 @@
                 <span class="select-icon">&#x1F310;</span>
                 <select id="settings-language-select" class="custom-select">
                   <option value="si" selected>Sinhala (&#x0DC3;&#x0DD2;&#x0D82;&#x0DC4;&#x0DBB;)</option>
+                  <option value="si-en">Sinhala + English (Mixed / Singlish)</option>
                   <option value="auto">Auto-Detect Language</option>
                   <option value="en">English</option>
                 </select>
@@ -521,6 +640,12 @@
               <label for="input-max-cpl">Max Characters Per Line</label>
               <input type="number" id="input-max-cpl" class="text-input" min="15" max="80" value="38" />
             </div>
+          </div>
+
+          <div class="settings-field full-width" style="margin-top: 10px;">
+            <label for="input-custom-english-words">Custom English Words (Never Transliterate)</label>
+            <input type="text" id="input-custom-english-words" class="text-input" placeholder="e.g. AutoCap, Premiere, Vlog, BrandName (comma-separated)" />
+            <p class="preview-note">&#x1F4A1; These words will always remain in English when typing or transcribing.</p>
           </div>
         </div>
 
@@ -558,6 +683,13 @@
 
           <div class="app-toggles-list">
             <div class="toggle-row">
+              <span>Automatically add caption track after generation</span>
+              <label class="switch">
+                <input type="checkbox" id="pref-auto-import" />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="toggle-row">
               <span>Auto open captions after import</span>
               <label class="switch">
                 <input type="checkbox" id="pref-auto-open" checked />
@@ -580,6 +712,30 @@
             </div>
           </div>
         </div>
+        <!-- 6: Advanced / Developer Settings -->
+        <details class="card step-card advanced-settings-details">
+          <summary class="advanced-settings-summary">
+            <div class="step-header">
+              <div class="step-number">&#x2699;</div>
+              <div class="step-meta">
+                <h3>Advanced / Developer Settings</h3>
+                <p>Custom graphic template (.mogrt) override &amp; developer controls.</p>
+              </div>
+            </div>
+          </summary>
+          <div class="advanced-settings-content" style="margin-top: 14px;">
+            <div class="settings-field">
+              <label for="input-custom-mogrt-override">Custom Graphic Template Override (.mogrt)</label>
+              <div class="api-key-row">
+                <input id="input-custom-mogrt-override" type="text" class="text-input" placeholder="(Bundled AutoCapCaption.mogrt is used by default)" />
+                <button id="btn-browse-advanced-mogrt" type="button" class="btn-test-key">&#x1F4C1; Browse</button>
+                <button id="btn-reset-advanced-mogrt" type="button" class="btn-test-key" title="Reset to default bundled template">&#x27F3; Reset</button>
+                <input id="advanced-mogrt-file" type="file" accept=".mogrt" hidden />
+              </div>
+              <p class="preview-note">&#x1F4A1; AutoCap uses its bundled <code>AutoCapCaption.mogrt</code> by default with zero configuration. Only specify a path here if you have built a custom After Effects MOGRT with exposed Text controls.</p>
+            </div>
+          </div>
+        </details>
 
         <!-- Bottom Actions -->
         <div class="settings-actions-footer">

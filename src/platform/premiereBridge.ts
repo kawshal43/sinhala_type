@@ -27,6 +27,25 @@ export function evalExtendScript(script: string): Promise<string> {
   });
 }
 
+let hostScriptLoaded = false;
+
+/**
+ * Ensures the latest host.jsx is evaluated in Premiere Pro.
+ */
+export async function ensureHostScriptLoaded(): Promise<void> {
+  if (!isCep() || hostScriptLoaded) return;
+  try {
+    const cep = (window as any)?.__adobe_cep__;
+    const extPath = cep && typeof cep.getSystemPath === "function" ? cep.getSystemPath("extension") : "";
+    if (extPath) {
+      const normalized = extPath.replace(/\\/g, "/").replace(/\/$/, "");
+      const hostFile = `${normalized}/jsx/host.jsx`;
+      await evalExtendScript(`try { if (!$._AutoCap_Host) { $.evalFile("${hostFile}"); } } catch(e) {}`);
+      hostScriptLoaded = true;
+    }
+  } catch {}
+}
+
 /**
  * Calls a host ExtendScript function defined in host.jsx via JSON RPC.
  */
@@ -40,6 +59,7 @@ export async function callHostFunction<T = any>(
       error: { code: "NOT_CEP", message: "Not running in CEP environment." }
     };
   }
+  await ensureHostScriptLoaded();
   const serializedArgs = args
     .map((arg) => JSON.stringify(typeof arg === "string" ? arg : JSON.stringify(arg)))
     .join(", ");

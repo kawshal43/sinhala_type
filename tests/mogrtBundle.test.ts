@@ -59,7 +59,18 @@ describe("bundled AutoCap caption MOGRT", () => {
     expect(definition.usedFontsLocalized.en_US).toContain("NotoSansSinhala-Regular");
   });
 
-  it("contains its editable Premiere graphic project", () => {
-    expect(readZipEntry(mogrt, "project.prgraphic").length).toBeGreaterThan(1_000);
+  it("contains its editable Premiere graphic project without unwanted shape layers", () => {
+    const prgraphic = readZipEntry(mogrt, "project.prgraphic");
+    expect(prgraphic.length).toBeGreaterThan(1_000);
+
+    // Verify zero shape components so user gets pure, un-obscured text
+    const decompressed = prgraphic.toString("utf8");
+    expect(decompressed).not.toContain("AE.ADBE Shape");
+
+    // Verify definition has no shape controls
+    const hasShapeControl = definition.clientControls.some((c: any) =>
+      c.type === 8 || c.value?.strDB?.some((v: any) => /shape/i.test(v.str))
+    );
+    expect(hasShapeControl).toBe(false);
   });
 });

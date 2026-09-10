@@ -55,6 +55,23 @@ try {
   $cepExtensionsRoot = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "Adobe\CEP\extensions"
   $destinationRoot = Join-Path $cepExtensionsRoot "AutoCap"
 
+  # Clean obsolete legacy extension if present
+  $legacyExt = Join-Path $cepExtensionsRoot "SinhalaType"
+  if (Test-Path -LiteralPath $legacyExt) {
+    Remove-Item -Path $legacyExt -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[OK] Removed obsolete SinhalaType extension folder." -ForegroundColor DarkGray
+  }
+
+  # Clean stale JS bundle chunks
+  $distAssets = Join-Path $destinationRoot "dist\assets"
+  if (Test-Path -LiteralPath $distAssets) {
+    Get-ChildItem -Path $distAssets -Filter "index-*.js" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  }
+  $rootAssets = Join-Path $destinationRoot "assets"
+  if (Test-Path -LiteralPath $rootAssets) {
+    Get-ChildItem -Path $rootAssets -Filter "index-*.js" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  }
+
   New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
 
   # 3. Copy files to destination

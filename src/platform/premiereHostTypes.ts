@@ -157,6 +157,13 @@ export interface MOGRTInsertionResult {
   missingProperties?: string[];
 }
 
+export interface UpgradeCaptionsResult {
+  status: "upgraded";
+  commandId: number;
+  commandName: string;
+  message: string;
+}
+
 export interface HostRpcResponse<T = any> {
   success: boolean;
   data?: T;
@@ -166,3 +173,4 @@ export interface HostRpcResponse<T = any> {
     details?: any;
   };
 }
+

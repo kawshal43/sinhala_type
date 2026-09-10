@@ -57,7 +57,6 @@ import { transcriptionJobController } from "./services/transcriptionJob";
 import { audioPresetManager } from "./services/audioPresetManager";
 import { runGeminiAudioDiagnostic } from "./services/geminiDiagnostics";
 import { premiereAudioClient } from "./platform/premiereAudio";
-import { premiereGraphicsClient } from "./platform/premiereGraphics";
 import { premiereCaptionsClient } from "./platform/premiereCaptions";
 import { temporaryMedia } from "./services/temporaryMedia";
 import type { PreparedTimelineAudio, TimelineCaptionDocument, HostSequenceSummary, AudioSourceRequest } from "./platform/premiereHostTypes";
@@ -1147,26 +1146,13 @@ async function importCurrentCaptions(): Promise<void> {
 
 type SavedGraphicOptions = {
   outputFormat?: "native" | "graphics";
-  track?: number;
-  mode?: "add" | "replace" | "timing-only";
-  customMogrtPath?: string;
 };
-const GRAPHIC_OPTIONS_KEY = "autocap.captionGraphics.v2";
-
-function numberValue(selector: string, fallback: number): number {
-  const el = $(selector) as HTMLInputElement;
-  if (!el) return fallback;
-  const value = Number(el.value);
-  return Number.isFinite(value) ? value : fallback;
-}
+const GRAPHIC_OPTIONS_KEY = "autocap.captionGraphics.v3";
 
 function saveGraphicOptions(): void {
   try {
     const data: SavedGraphicOptions = {
-      outputFormat: outputModeGraphics.checked ? "graphics" : "native",
-      track: numberValue("#caption-graphic-track", 2),
-      mode: (captionGraphicMode.value as any) || "add",
-      customMogrtPath: inputCustomMogrtOverride?.value.trim() || ""
+      outputFormat: outputModeGraphics.checked ? "graphics" : "native"
     };
     localStorage.setItem(GRAPHIC_OPTIONS_KEY, JSON.stringify(data));
   } catch {}
@@ -1174,6 +1160,7 @@ function saveGraphicOptions(): void {
 
 function loadGraphicOptions(): void {
   try {
+    localStorage.removeItem("autocap.captionGraphics.v2"); // Clean up legacy MOGRT storage
     const saved = JSON.parse(localStorage.getItem(GRAPHIC_OPTIONS_KEY) || "null") as SavedGraphicOptions | null;
     if (!saved) return;
     if (saved.outputFormat === "graphics") {
@@ -1182,13 +1169,6 @@ function loadGraphicOptions(): void {
       outputModeNative.checked = true;
     }
     updateOutputModeUI();
-
-    if (typeof saved.track === "number") captionGraphicTrack.value = String(saved.track);
-    if (saved.mode) captionGraphicMode.value = saved.mode;
-
-    if (saved.customMogrtPath && inputCustomMogrtOverride) {
-      inputCustomMogrtOverride.value = saved.customMogrtPath;
-    }
   } catch {}
 }
 
@@ -1196,7 +1176,7 @@ function updateOutputModeUI(): void {
   const isGraphics = outputModeGraphics.checked;
   captionGraphicsDrawer.hidden = !isGraphics;
   premiereBtnIcon.textContent = isGraphics ? "✨" : "🎬";
-  premiereBtnText.textContent = isGraphics ? "Add Graphic Clips to Premiere" : "Import to Premiere";
+  premiereBtnText.textContent = isGraphics ? "Add Graphics to Premiere" : "Import to Premiere";
 }
 
 outputModeNative.addEventListener("change", () => {
@@ -1207,13 +1187,6 @@ outputModeNative.addEventListener("change", () => {
 outputModeGraphics.addEventListener("change", () => {
   updateOutputModeUI();
   saveGraphicOptions();
-});
-
-[
-  captionGraphicTrack,
-  captionGraphicMode
-].forEach((el) => {
-  el?.addEventListener("change", saveGraphicOptions);
 });
 
 let activeGraphicsAbortController: AbortController | null = null;
@@ -1230,50 +1203,58 @@ async function insertCurrentCaptionsAsGraphics(): Promise<void> {
   btnImportPremiere.disabled = true;
   graphicInsertionProgress.hidden = false;
   graphicProgressFill.style.width = "0%";
-  graphicProgressText.textContent = `Preparing graphics (0 of ${currentCues.length})...`;
+  graphicProgressText.textContent = `Preparing native editable graphics (0 of ${currentCues.length})...`;
 
   activeGraphicsAbortController = new AbortController();
   saveGraphicOptions();
 
   try {
     const sequence = await inspectTimeline();
-    const customTemplate = inputCustomMogrtOverride?.value.trim() || undefined;
+    // 100% Reliable Native Premiere Subtitle -> Graphic Upgrade Workflow
+    graphicProgressFill.style.width = "30%";
+      graphicProgressText.textContent = `Placing ${currentCues.length} captions on timeline...`;
 
-    const result = await premiereGraphicsClient.insertAllCaptionGraphicsChunked(
-      {
-        sequenceId: timelineDocument?.sequenceId || sequence.sequenceId,
-        timelineStartSec: timelineDocument?.timelineStartSec || 0,
-        templatePath: customTemplate,
-        encoding,
-        targetVideoTrackIndex: numberValue("#caption-graphic-track", 2),
-        cues: currentCues,
-        mode: (captionGraphicMode.value as any) || "add"
-      },
-      {
-        batchSize: 8,
-        signal: activeGraphicsAbortController.signal,
-        onProgress: (p) => {
-          graphicProgressFill.style.width = `${p.percentage}%`;
-          graphicProgressText.textContent = p.statusText;
-        }
+      const document: TimelineCaptionDocument = timelineDocument
+        ? { ...timelineDocument, cues: getProcessedCues() }
+        : {
+            sequenceId: sequence.sequenceId,
+            timelineStartSec: 0,
+            audioDurationSec: Math.max(...currentCues.map((c) => c.end)),
+            cues: getProcessedCues()
+          };
+
+      const importResult = await premiereCaptionsClient.importCaptionDocument(document, sequence.sequenceName);
+      if (importResult.status === "failed") {
+        throw new Error(importResult.message || "Failed to place captions on timeline.");
       }
-    );
 
-    if (result.success) {
+      graphicProgressFill.style.width = "70%";
+      graphicProgressText.textContent = "Converting captions to native editable text graphics...";
+
+      // Brief pause to ensure timeline track items are registered
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const upgradeResult = await premiereCaptionsClient.upgradeCaptionsToGraphics(sequence.sequenceId);
+
       graphicProgressFill.style.width = "100%";
-      graphicProgressText.textContent = `✓ Done: ${result.insertedCount} graphics inserted!`;
-      notify(result.message, false);
-      setTimeout(() => {
-        if (!activeGraphicsAbortController) {
-          graphicInsertionProgress.hidden = true;
-        }
-      }, 3500);
-    } else {
-      graphicProgressText.textContent = result.message;
-      notify(result.message, true);
-    }
+      if (upgradeResult.success) {
+        graphicProgressText.textContent = `✓ Done: ${currentCues.length} editable text graphics created!`;
+        notify(`✓ Successfully created ${currentCues.length} editable text graphics on your timeline!`, false);
+      } else {
+        graphicProgressText.textContent = `✓ Subtitles placed on timeline.`;
+        notify(
+          "Subtitles placed on timeline! Select the subtitle clips on your timeline and click '⚡ Upgrade to Graphics' (or Premiere menu: Graphics and Titles > Upgrade Caption to Graphic) to convert to text clips.",
+          false
+        );
+      }
+
+    setTimeout(() => {
+      if (!activeGraphicsAbortController) {
+        graphicInsertionProgress.hidden = true;
+      }
+    }, 4000);
   } catch (error: any) {
-    const message = error?.message || "Graphics insertion failed.";
+    const message = error?.message || "Graphics creation failed.";
     graphicProgressText.textContent = message;
     notify(message, true);
   } finally {
@@ -1297,20 +1278,20 @@ btnImportPremiere.addEventListener("click", () => {
   }
 });
 
-// Advanced settings custom MOGRT override handlers
-btnBrowseAdvancedMogrt?.addEventListener("click", () => advancedMogrtFile?.click());
-advancedMogrtFile?.addEventListener("change", () => {
-  const file = advancedMogrtFile.files?.[0] as (File & { path?: string }) | undefined;
-  if (!file) return;
-  inputCustomMogrtOverride.value = file.path || file.name;
-  saveGraphicOptions();
+const btnUpgradeGraphics = $<HTMLButtonElement>("#btn-upgrade-graphics");
+btnUpgradeGraphics?.addEventListener("click", async () => {
+  btnUpgradeGraphics.disabled = true;
+  try {
+    const sequence = await inspectTimeline();
+    notify("Upgrading captions to native graphic clips...", false);
+    const res = await premiereCaptionsClient.upgradeCaptionsToGraphics(sequence.sequenceId);
+    notify(res.message, !res.success);
+  } catch (err: any) {
+    notify(err.message || "Failed to upgrade captions to graphic clips.", true);
+  } finally {
+    btnUpgradeGraphics.disabled = false;
+  }
 });
-btnResetAdvancedMogrt?.addEventListener("click", () => {
-  if (inputCustomMogrtOverride) inputCustomMogrtOverride.value = "";
-  saveGraphicOptions();
-  notify("Reset to default bundled AutoCapCaption.mogrt");
-});
-
 loadGraphicOptions();
 
 btnExportSrt.addEventListener("click", async () => {
@@ -2029,63 +2010,6 @@ btnTestGeminiAudio?.addEventListener("click", async () => {
       btnTestGeminiAudio.disabled = false;
       btnTestGeminiAudio.textContent = "🧪 Test Audio Modality";
     }
-  }
-});
-
-// ==========================================================================
-// MOGRT Insertion in Sinhala Typer
-// ==========================================================================
-const btnToggleMogrt = document.querySelector<HTMLButtonElement>("#btn-toggle-mogrt");
-const mogrtConfigPanel = document.querySelector<HTMLDivElement>("#mogrt-config-panel");
-const mogrtTrackSelect = document.querySelector<HTMLSelectElement>("#mogrt-track-select");
-const mogrtDurationInput = document.querySelector<HTMLInputElement>("#mogrt-duration-input");
-const mogrtTemplateInput = document.querySelector<HTMLInputElement>("#mogrt-template-input");
-const btnBrowseMogrt = document.querySelector<HTMLButtonElement>("#btn-browse-mogrt");
-const btnExecuteInsertMogrt = document.querySelector<HTMLButtonElement>("#btn-execute-insert-mogrt");
-
-btnToggleMogrt?.addEventListener("click", () => {
-  if (mogrtConfigPanel) {
-    mogrtConfigPanel.hidden = !mogrtConfigPanel.hidden;
-  }
-});
-
-btnBrowseMogrt?.addEventListener("click", () => {
-  mogrtTemplateInput?.focus();
-  notify("Enter or paste the path to your verified .mogrt template file.");
-});
-
-btnExecuteInsertMogrt?.addEventListener("click", async () => {
-  const text = (document.querySelector<HTMLTextAreaElement>("#sinhala")?.value || "").trim();
-  if (!text) {
-    return notify("Please type or convert some Sinhala text first.", true);
-  }
-  const templatePath = (mogrtTemplateInput?.value || "").trim();
-  const trackIdx = parseInt(mogrtTrackSelect?.value || "2", 10);
-  const dur = parseFloat(mogrtDurationInput?.value || "4.0");
-
-  btnExecuteInsertMogrt.disabled = true;
-  btnExecuteInsertMogrt.textContent = "⏳ Inserting...";
-  try {
-    const res = await premiereGraphicsClient.insertGraphic({
-      sequenceId: "active_sequence",
-      templatePath,
-      text,
-      encoding: subtitleEncoding,
-      targetVideoTrackIndex: trackIdx,
-      durationSec: dur
-    });
-
-    if (res.success) {
-      notify(`✓ ${res.message}`);
-      if (mogrtConfigPanel) mogrtConfigPanel.hidden = true;
-    } else {
-      notify(`MOGRT Error: ${res.message}`, true);
-    }
-  } catch (err: any) {
-    notify(`Failed to insert graphic: ${err.message}`, true);
-  } finally {
-    btnExecuteInsertMogrt.disabled = false;
-    btnExecuteInsertMogrt.textContent = "✨ Place Graphic on Playhead";
   }
 });
 

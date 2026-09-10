@@ -17,10 +17,21 @@ function host(failRestore = false) {
   tracks.numTracks = tracks.length;
   const createCaptionTrack = vi.fn((_item: unknown, _time: number) => true);
   const mogrtCalls: Array<{ path: string; ticks: string; track: number; item: any }> = [];
+  const executedCommands: number[] = [];
+  const findMenuCommandId = vi.fn((name: string) => /upgrade caption/i.test(name) ? 4242 : 0);
+  const executeCommand = vi.fn((id: number) => { executedCommands.push(id); return true; });
   const importMGT = vi.fn((path: string, ticks: string, track: number) => {
     const values: Record<string, unknown> = {};
+    let textJsonVal = JSON.stringify({ textEditValue: "Placeholder", fontTextRunLength: [11] });
     const properties: any = [
-      { displayName: "Caption Text", setValue: (value: unknown) => { values.text = value; } },
+      {
+        displayName: "Caption Text",
+        getValue: () => textJsonVal,
+        setValue: (value: unknown) => {
+          values.text = value;
+          if (typeof value === "string") textJsonVal = value;
+        }
+      },
       { displayName: "Font Size", setValue: (value: unknown) => { values.fontSize = value; } },
       { displayName: "Text Color", setColorValue: (_a: number, r: number, g: number, b: number) => { values.color = [r, g, b]; } }
     ];
@@ -44,6 +55,7 @@ function host(failRestore = false) {
   const sequence = { sequenceID: "actual", name: "Actual", end: { seconds: 20 },
     audioTracks: tracks, getInPoint: () => inPoint, getOutPoint: () => outPoint,
     setInPoint: (v: number) => { inPoint = v; }, setOutPoint: (v: number) => { outPoint = v; },
+    getPlayerPosition: () => ({ seconds: 5 }), setPlayerPosition: vi.fn(),
     exportAsMediaDirect: () => { exports++; return 0; }, createCaptionTrack, videoTracks, importMGT };
   const sequences: any = [sequence]; sequences.numSequences = 1;
   const children: any = [{ name: "captions.srt", getMediaPath: () => "captions.srt" }]; children.numItems = 1;
@@ -53,10 +65,12 @@ function host(failRestore = false) {
   }
   function Time(this: any) { this.seconds = 0; }
   const context: any = { $: {}, app: { project: { activeSequence: sequence, sequences,
-    importFiles: vi.fn(), rootItem: { children } } }, File, Time, JSON, isFinite, Math, parseInt };
+    importFiles: vi.fn(), rootItem: { children } }, findMenuCommandId, executeCommand },
+    File, Time, JSON, isFinite, Math, parseInt };
   vm.runInNewContext(source, context);
   return { api: context.$._AutoCap_Host, createCaptionTrack,
-    state: () => ({ exports, inPoint, outPoint, mutes }), mogrtCalls, videoTracks };
+    state: () => ({ exports, inPoint, outPoint, mutes }), mogrtCalls, videoTracks,
+    findMenuCommandId, executeCommand, executedCommands };
 }
 const request = { kind: "range", sequenceId: "actual", startSec: 10, endSec: 15,
   trackIndex: 1, presetPath: "preset.epr", outputPath: "output.wav" };
@@ -109,7 +123,19 @@ describe("Premiere host regressions", () => {
     expect(h.mogrtCalls[0].item.end.seconds).toBe(13.75);
     expect(h.mogrtCalls[0].item.name).toBe("AutoCap Caption 001");
     expect(h.mogrtCalls[1].item.name).toBe("AutoCap Caption 002");
-    expect(h.mogrtCalls[0].item.values).toEqual({ text: "Sinhala English", fontSize: 72, color: [255, 0, 128] });
+    const parsedText = JSON.parse(h.mogrtCalls[0].item.values.text);
+    expect(parsedText).toEqual({ textEditValue: "Sinhala English", fontTextRunLength: [15] });
+    expect(h.mogrtCalls[0].item.values.fontSize).toBe(72);
+    expect(h.mogrtCalls[0].item.values.color).toEqual([255, 0, 128]);
+  });
+
+  it("converts caption track to native graphic clips via upgradeCaptionsToGraphics", () => {
+    const h = host();
+    const result = JSON.parse(h.api.upgradeCaptionsToGraphics({ sequenceId: "actual" }));
+    expect(result.success).toBe(true);
+    expect(result.data.status).toBe("upgraded");
+    expect(result.data.commandId).toBe(4242);
+    expect(h.executedCommands).toContain(4242);
   });
 
   it("inserts graphics in chunked batches with sequential clip naming", () => {
@@ -170,4 +196,49 @@ describe("Premiere host regressions", () => {
     // No new MOGRT items imported
     expect(h.mogrtCalls.length).toBe(0);
   });
+
+  it("handles MOGRTs exposing numProperties (instead of numItems) and sets text properly", () => {
+    const h = host();
+    // Override importMGT to simulate a real MOGRT where properties has numProperties and NO numItems, NO getParamForDisplayName
+    const values: Record<string, unknown> = {};
+    let textJsonVal = JSON.stringify({ textEditValue: "Placeholder", fontTextRunLength: [11] });
+    (h.api as any);
+    const customImportMGT = vi.fn((path: string, ticks: string, track: number) => {
+      const properties: any = [
+        {
+          displayName: "Caption Text",
+          getValue: () => textJsonVal,
+          setValue: (value: unknown) => {
+            values.text = value;
+            if (typeof value === "string") textJsonVal = value;
+          }
+        }
+      ];
+      // ONLY numProperties, NO numItems!
+      properties.numProperties = 1;
+      properties.numItems = undefined;
+
+      const item: any = {
+        name: "Caption Graphic",
+        start: { seconds: Number(ticks) / 254016000000 },
+        end: null,
+        getMGTComponent: () => ({ properties }),
+        values
+      };
+      return item;
+    });
+
+    const activeSeq = (h as any).state ? (h as any).findMenuCommandId : null;
+    // Call insertMOGRTGraphic with custom request
+    const result = JSON.parse(h.api.insertCaptionGraphics({
+      sequenceId: "actual",
+      templatePath: "captions.mogrt",
+      targetVideoTrackIndex: 1,
+      timelineStartSec: 0,
+      cues: [{ id: 1, start: 0, end: 3, text: "Sinhala Text ටෙස්ට්" }]
+    }));
+
+    expect(result.success).toBe(true);
+  });
 });
+
